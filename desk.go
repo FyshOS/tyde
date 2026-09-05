@@ -32,7 +32,9 @@ type Desktop interface {
 	Desktop() int
 	SetDesktop(int)
 	ShowDesktopOverview(count int)
-	ShowSettings()
+	// ShowSettings opens the settings window. A non-empty panel title opens that
+	// panel directly; an empty string shows whatever the window was last on.
+	ShowSettings(panel string)
 
 	DelayScreenSaver()
 	TriggerScreenSaver(bool)

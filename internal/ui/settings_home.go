@@ -239,15 +239,7 @@ func (n *settingsNav) open(p *settingsPanel) {
 		return
 	}
 	n.current = p
-
-	if p.content == nil {
-		p.content = p.build()
-	}
-	n.detailTitle.SetText(p.title)
-	n.detailIcon.Resource = p.icon
-	n.detailIcon.Refresh()
-	n.detailContent.Objects = []fyne.CanvasObject{p.content}
-	n.detailContent.Refresh()
+	n.loadDetail(p)
 
 	start := n.absCentre(p.tile.icon)
 	p.tileCentre = start // remember: the grid never moves, so we fly straight back here
@@ -260,6 +252,48 @@ func (n *settingsNav) open(p *settingsPanel) {
 		n.home.Hide()
 		n.detail.Show()
 	})
+}
+
+// loadDetail populates the detail header and body from a panel, building its
+// content on first use.
+func (n *settingsNav) loadDetail(p *settingsPanel) {
+	if p.content == nil {
+		p.content = p.build()
+	}
+	n.detailTitle.SetText(p.title)
+	n.detailIcon.Resource = p.icon
+	n.detailIcon.Refresh()
+	n.detailContent.Objects = []fyne.CanvasObject{p.content}
+	n.detailContent.Refresh()
+}
+
+// showPanel jumps straight to the named panel and reports whether the title matched.
+func (n *settingsNav) showPanel(title string) bool {
+	p := n.panelByTitle(title)
+	if p == nil {
+		return false
+	}
+	if n.animating || n.current == p {
+		return n.current == p
+	}
+
+	n.current = p
+	n.loadDetail(p)
+	n.home.Hide()
+	n.detail.Show()
+	return true
+}
+
+// panelByTitle finds a panel by its title across all groups.
+func (n *settingsNav) panelByTitle(title string) *settingsPanel {
+	for gi := range n.groups {
+		for _, p := range n.groups[gi].panels {
+			if p.title == title {
+				return p
+			}
+		}
+	}
+	return nil
 }
 
 // close reverses the animation, flying the docked icon back down to its grid
@@ -276,7 +310,14 @@ func (n *settingsNav) close() {
 	n.flyer.Resource = p.icon
 	n.flyer.Refresh()
 
-	n.animate(start, headerIconSize, tileIconSize, p.tileCentre, func() {
+	// A panel reached via showPanel never captured a tile centre.
+	// Read it now that home is visible again.
+	target := p.tileCentre
+	if target.IsZero() {
+		target = n.absCentre(p.tile.icon)
+	}
+
+	n.animate(start, headerIconSize, tileIconSize, target, func() {
 		n.current = nil
 	})
 }

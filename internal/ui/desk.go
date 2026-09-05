@@ -421,8 +421,8 @@ func (l *desktop) synthesizeDeskFace(sw *screenWindow, old, id int) image.Image 
 	return face
 }
 
-func (l *desktop) ShowSettings() {
-	l.widgets.showSettings()
+func (l *desktop) ShowSettings(panel string) {
+	l.widgets.showSettings(panel)
 }
 
 func (l *desktop) Layout(objects []fyne.CanvasObject, size fyne.Size) {

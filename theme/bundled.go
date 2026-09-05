@@ -218,3 +218,10 @@ var resourceClockSvg = &fyne.StaticResource{
 	StaticName:    "assets/clock.svg",
 	StaticContent: resourceClockSvgData,
 }
+
+//go:embed assets/update.svg
+var resourceUpdateSvgData []byte
+var resourceUpdateSvg = &fyne.StaticResource{
+	StaticName:    "assets/update.svg",
+	StaticContent: resourceUpdateSvgData,
+}

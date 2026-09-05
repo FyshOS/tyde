@@ -76,6 +76,8 @@ var (
 	WallpaperIcon = theme.NewThemedResource(resourceWallpaperSvg)
 	// ClockIcon is the material design icon for time and date settings
 	ClockIcon = theme.NewThemedResource(resourceClockSvg)
+	// UpdateIcon is the material design icon for available system updates
+	UpdateIcon = theme.NewThemedResource(resourceUpdateSvg)
 
 	// BorderWidth is the width of window frames
 	BorderWidth = float32(4)

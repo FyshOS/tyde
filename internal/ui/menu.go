@@ -145,7 +145,7 @@ func (w *widgetPanel) showAccountMenu(_ fyne.CanvasObject) {
 		}},
 		&widget.Button{Icon: theme.SettingsIcon(), Importance: widget.LowImportance, OnTapped: func() {
 			dismiss()
-			w.showSettings()
+			w.showSettings("")
 		}},
 	}
 	items := container.NewBorder(nil, nil, container.NewHBox(items1...), container.NewHBox(items2...),

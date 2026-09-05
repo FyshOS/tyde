@@ -389,7 +389,7 @@ func newWifiNetworks(win fyne.Window) (*netman.Networks, *dbus.Conn, error) {
 // which opens as its own window beneath where this overlay was.
 func (w *welcome) openFullSettings() {
 	w.dismiss(true)
-	w.desk.ShowSettings()
+	w.desk.ShowSettings("")
 }
 
 // dismiss stops the animations, records that the welcome has been seen and tears

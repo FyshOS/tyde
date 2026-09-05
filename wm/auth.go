@@ -168,7 +168,7 @@ func (a *auth) BeginAuthentication(actionID, message, iconName string, details m
 		auth.OnTapped()
 	}
 
-	header := widget.NewRichTextFromMarkdown(fmt.Sprintf("### Authorise\n\n_%s_", message))
+	header := widget.NewRichTextFromMarkdown(fmt.Sprintf("### Authorise\n\n```%s```", message))
 	header.Wrapping = fyne.TextWrapBreak
 	header.Refresh()
 	bottomPad := canvas.NewRectangle(color.Transparent)

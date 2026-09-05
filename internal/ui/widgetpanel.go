@@ -79,6 +79,7 @@ type widgetPanel struct {
 
 	desk            tyde.Desktop
 	about, settings fyne.Window
+	settingsNav     *settingsNav // retained so a re-show can jump to a named panel
 
 	account         *widget.Button
 	clock, vClock   *canvas.Text

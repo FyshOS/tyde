@@ -62,7 +62,7 @@ func (*Desktop) SetDesktop(int) {
 func (*Desktop) ShowDesktopOverview(int) {}
 
 // ShowSettings does nothing for the test package
-func (*Desktop) ShowSettings() {}
+func (*Desktop) ShowSettings(string) {}
 
 // IconProvider returns the icon provider, by default it uses a simple in-memory implementation
 func (td *Desktop) IconProvider() appie.Provider {

@@ -101,7 +101,7 @@ func (f *fyles) tapped(u fyne.URI) {
 	}()
 
 	if u.Scheme() == "settings" {
-		tyde.Instance().ShowSettings()
+		tyde.Instance().ShowSettings("")
 		return
 	}
 	p, err := execabs.LookPath("fyles")
