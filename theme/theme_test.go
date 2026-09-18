@@ -66,7 +66,7 @@ func TestSetTouchScreen(t *testing.T) {
 
 // Verify theme color names - both current and legacy for backward compatibility checks.
 func TestWidgetPanelBackground_ThemeColorNames(t *testing.T) {
-	panel := &color.NRGBA{R: 0x0e, G: 0x26, B: 0x34, A: 0xb3}
+	panel := color.NRGBA{R: 0x0e, G: 0x26, B: 0x34, A: 0xb3}
 	defer fyne.CurrentApp().Settings().SetTheme(theme.DefaultTheme())
 
 	for name, json := range map[string]string{
