@@ -16,25 +16,26 @@ import (
 // The result is premultiplied-alpha RGBA: when argb is true the pixmap's alpha
 // is applied to the colour channels, otherwise alpha is forced to 0xff (fully
 // opaque). This image choice is optimised for the Fyne render pipeline.
-func capturePixmap(conn *xgb.Conn, drawable xproto.Drawable, w, h uint16, argb bool, buf *image.RGBA) *image.RGBA {
+func capturePixmap(conn *xgb.Conn, drawable xproto.Drawable, width, height uint16, argb bool, buf *image.RGBA) *image.RGBA {
+	w, h := int(width), int(height)
 	if w == 0 || h == 0 {
 		return nil
 	}
 
 	reply, err := xproto.GetImage(conn, xproto.ImageFormatZPixmap, drawable,
-		0, 0, w, h, math.MaxUint32).Reply()
+		0, 0, width, height, math.MaxUint32).Reply()
 	if err != nil || reply == nil {
 		return nil
 	}
 
 	img := buf
-	if img == nil || img.Rect.Dx() != int(w) || img.Rect.Dy() != int(h) || img.Stride != int(w)*4 {
-		img = image.NewRGBA(image.Rect(0, 0, int(w), int(h)))
+	if img == nil || img.Rect.Dx() != w || img.Rect.Dy() != h || img.Stride != w*4 {
+		img = image.NewRGBA(image.Rect(0, 0, w, h))
 	}
 	data := reply.Data
 
 	// X11 ZPixmap format: 4 bytes per pixel in BGRx or BGRA order
-	expectedLen := int(w) * int(h) * 4
+	expectedLen := w * h * 4
 	if len(data) < expectedLen {
 		return nil
 	}

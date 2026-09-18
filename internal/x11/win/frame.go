@@ -6,15 +6,19 @@ package win
 import (
 	"context"
 	"image"
+	"image/color"
+	"image/draw"
 	"math"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/BurntSushi/xgb"
 	"github.com/BurntSushi/xgb/shape"
 	"github.com/BurntSushi/xgb/xproto"
 	"github.com/BurntSushi/xgbutil/ewmh"
 	"github.com/BurntSushi/xgbutil/icccm"
+	"github.com/BurntSushi/xgbutil/xprop"
 	"github.com/BurntSushi/xgbutil/xwindow"
 
 	"fyne.io/fyne/v2"
@@ -22,6 +26,7 @@ import (
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/driver/software"
 	"fyne.io/fyne/v2/theme"
+	"fyne.io/fyne/v2/widget"
 
 	"fyshos.com/tyde"
 	"fyshos.com/tyde/internal/x11"
@@ -33,6 +38,9 @@ const unmaximizeThreshold = 84
 
 // defaultBackgroundTransparency is the default background opacity.
 const defaultBackgroundTransparency = 20
+
+// gripSize is the size of the resize grip an InnerWindow draws in its corner.
+const gripSize = 16
 
 type frame struct {
 	x, y                                int16
@@ -46,10 +54,6 @@ type frame struct {
 	resizeLeft, resizeRight             bool
 	moveOnly, ignoreDrag                bool
 
-	borderTop, borderTopRight             xproto.Pixmap
-	borderTopGC, borderTopRightGC, rectGC xproto.Gcontext
-	borderTopWidth                        uint16
-
 	hovered    desktop.Hoverable
 	clickCount int
 	cancelFunc context.CancelFunc
@@ -60,7 +64,22 @@ type frame struct {
 	transparencySet bool
 	closed          atomic.Bool
 
+	// canvas holds the frame widgets, which are rendered into strip and hit
+	// tested by the mouse handlers. Main goroutine only.
 	canvas software.WindowlessCanvas
+	active bool // whether the window was focused when last rendered
+
+	// The rendered decoration, painted over captures of the frame by
+	// decorate: the title bar strip, whose last stripRight pixels are kept at
+	// the frame's right edge, the resize grip for the bottom corner and the
+	// plain border colour. Guarded by decorMu as decorate runs on the
+	// compositor goroutine.
+	decorMu     sync.Mutex
+	strip, grip *image.RGBA
+	stripRight  int
+	bg          color.RGBA
+	decorSerial uint32
+
 	client *client
 }
 
@@ -129,7 +148,7 @@ func newFrame(c *client) *frame {
 	framed.x = x
 	framed.y = y
 	values := []uint32{xproto.EventMaskStructureNotify | xproto.EventMaskSubstructureNotify |
-		xproto.EventMaskSubstructureRedirect | xproto.EventMaskExposure |
+		xproto.EventMaskSubstructureRedirect |
 		xproto.EventMaskButtonPress | xproto.EventMaskButtonRelease | xproto.EventMaskButtonMotion |
 		xproto.EventMaskKeyPress | xproto.EventMaskPointerMotion | xproto.EventMaskFocusChange |
 		xproto.EventMaskPropertyChange | xproto.EventMaskLeaveWindow}
@@ -183,7 +202,7 @@ func newFrame(c *client) *frame {
 	windowStateSet(c.wm.X(), c.win, icccm.StateNormal)
 	c.frame = framed // set early so ScreenForWindow can resolve the correct screen
 	framed.show()
-	framed.applyTheme(true)
+	framed.applyTheme()
 	framed.notifyInnerGeometry()
 
 	return framed
@@ -210,7 +229,7 @@ func (f *frame) addBorder() {
 		f.width = w
 		f.height = h
 	}
-	f.applyTheme(true)
+	f.applyTheme()
 
 	xproto.ConfigureWindow(f.client.wm.Conn(), f.client.win, xproto.ConfigWindowX|xproto.ConfigWindowY|
 		xproto.ConfigWindowWidth|xproto.ConfigWindowHeight,
@@ -232,14 +251,16 @@ func (f *frame) applyBorderlessTheme() {
 		[]uint32{uint32(0), uint32(0), uint32(f.width), uint32(f.height)})
 }
 
-func (f *frame) applyTheme(force bool) {
+// applyTheme lays the client out for the current decoration state and brings
+// the frame widgets up to date with the window.
+func (f *frame) applyTheme() {
 	if f.client.Fullscreened() || !f.client.Properties().Decorated() {
 		f.applyBorderlessTheme()
 		return
 	}
 
 	f.checkScale()
-	f.decorate(force)
+	fyne.Do(f.renderDecoration)
 }
 
 func (f *frame) checkScale() {
@@ -302,193 +323,147 @@ func (f *frame) endConfigureLoop() {
 
 	// Sync the actual X11 window position to match the visual after drag
 	f.updateGeometry(f.x, f.y, f.width, f.height, true)
+	fyne.Do(f.renderDecoration) // lay the title bar out for the final size
 }
 
-func (f *frame) copyDecorationPixels(width, height, xoff, yoff uint32, img image.Image, pid xproto.Pixmap, draw xproto.Gcontext, depth byte) {
-	// DATA is BGRx
-	data := make([]byte, width*height*4)
-	i := uint32(0)
-	for y := uint32(0); y < height; y++ {
-		for x := uint32(0); x < width; x++ {
-			r, g, b, _ := img.At(int(xoff+x), int(yoff+y)).RGBA()
-
-			data[i] = byte(b)
-			data[i+1] = byte(g)
-			data[i+2] = byte(r)
-			data[i+3] = 0xff
-
-			i += 4
-		}
+// renderDecoration paints the title bar and resize grip into images that
+// decorate lays over captures of the frame, then asks the compositor to
+// capture again. The strip is at least as wide as the widgets need and
+// decorate keeps its right-hand part at the frame's edge, so a window can be
+// resized without re-rendering. Main goroutine only: font rendering is not
+// goroutine safe.
+func (f *frame) renderDecoration() {
+	if f.closed.Load() || f.client.Fullscreened() || !f.client.Properties().Decorated() {
+		return
 	}
-	xproto.PutImage(f.client.wm.Conn(), xproto.ImageFormatZPixmap, xproto.Drawable(pid), draw,
-		uint16(width), uint16(height), 0, int16(yoff), 0, depth, data)
+
+	screen := tyde.Instance().Screens().ScreenForWindow(f.client)
+	scale := screen.CanvasScale()
+	f.active = f.client.Focused()
+
+	if f.canvas == nil {
+		canMaximize := !windowSizeFixed(f.client.wm.X(), f.client.win) &&
+			windowSizeCanMaximize(f.client.wm.X(), f.client)
+		b := wm.NewBorder(f.client, f.client.Properties().Icon(), canMaximize)
+		b.CloseIntercept = f.client.Close
+
+		cnv := software.NewTransparentCanvas() // keeps the rounded corners clear
+		cnv.SetPadded(false)
+		cnv.SetContent(container.NewThemeOverride(b, &transparentTheme{Theme: theme.DefaultTheme(), frame: f}))
+		f.canvas = cnv
+	}
+	b := f.canvas.Content().(*container.ThemeOverride).Content.(*wm.Border)
+	b.Title = f.client.Properties().Title()
+	b.Icon = f.client.Properties().Icon()
+	b.Alignment = widget.ButtonAlignLeading
+	if tyde.Instance().Settings().BorderButtonPosition() == "Right" {
+		b.Alignment = widget.ButtonAlignTrailing
+	}
+	b.SetMaximized(f.client.maximized)
+	b.SetActive(f.active)
+	f.canvas.SetScale(scale)
+
+	right := f.topRightPixelWidth()
+	drawWidth := fyne.Max(f.canvas.Content().MinSize().Width, float32(f.width)/scale)
+	f.canvas.Resize(fyne.NewSize(drawWidth, wmTheme.TitleHeight+gripSize))
+	img := f.canvas.Capture()
+
+	strip := image.NewRGBA(image.Rect(0, 0, img.Bounds().Dx(), int(x11.TitleHeight(f.client))))
+	draw.Draw(strip, strip.Bounds(), img, image.Point{}, draw.Src)
+	gripPix := int(gripSize * scale)
+	grip := image.NewRGBA(image.Rect(0, 0, gripPix, gripPix))
+	draw.Draw(grip, grip.Bounds(), img, img.Bounds().Max.Sub(image.Pt(gripPix, gripPix)), draw.Src)
+	r, g, bl, _ := f.canvas.Content().(*container.ThemeOverride).Theme.Color(theme.ColorNameBackground, theme.VariantDark).RGBA()
+	bg := color.RGBA{R: uint8(r >> 8), G: uint8(g >> 8), B: uint8(bl >> 8), A: 0xff}
+
+	f.decorMu.Lock()
+	f.strip, f.grip, f.stripRight, f.bg = strip, grip, int(right), bg
+	f.decorMu.Unlock()
+
+	f.notifyDecorated()
 }
 
-func (f *frame) createPixmaps(depth byte) error {
-	heightPix := x11.TitleHeight(x11.XWin(f.client))
-	rightWidthPix := f.topRightPixelWidth()
-	drawPix := f.width
-	if f.canvas != nil {
-		minPix := uint16(f.canvas.Content().MinSize().Width * f.canvas.Scale())
-		if drawPix < minPix {
-			drawPix = minPix
-		}
-	}
-	f.borderTopWidth = drawPix - rightWidthPix
-
-	pid, err := xproto.NewPixmapId(f.client.wm.Conn())
+// notifyDecorated changes a property on the frame window so that the
+// compositor, which watches for property changes, captures the frame again
+// and picks up the new decoration.
+func (f *frame) notifyDecorated() {
+	atom, err := xprop.Atm(f.client.wm.X(), x11.DecorationProperty)
 	if err != nil {
-		return err
+		fyne.LogError("Could not get decoration atom", err)
+		return
 	}
 
-	xproto.CreatePixmap(f.client.wm.Conn(), depth, pid,
-		xproto.Drawable(f.client.wm.X().Screen().Root), f.borderTopWidth, heightPix)
-	f.borderTop = pid
-
-	pid, err = xproto.NewPixmapId(f.client.wm.Conn())
-	if err != nil {
-		return err
-	}
-
-	xproto.CreatePixmap(f.client.wm.Conn(), depth, pid,
-		xproto.Drawable(f.client.wm.X().Screen().Root), rightWidthPix, heightPix)
-	f.borderTopRight = pid
-
-	backR, backG, backB, _ := theme.Color(theme.ColorNameDisabledButton).RGBA()
-	if f.client.Focused() {
-		backR, backG, backB, _ = theme.Color(theme.ColorNameOverlayBackground).RGBA()
-	}
-	bgColor := uint32(uint8(backR))<<16 | uint32(uint8(backG))<<8 | uint32(uint8(backB))
-
-	f.rectGC, _ = xproto.NewGcontextId(f.client.wm.Conn())
-	if err := xproto.CreateGCChecked(f.client.wm.Conn(), f.rectGC, xproto.Drawable(f.client.id), xproto.GcForeground, []uint32{bgColor}).Check(); err != nil {
-		return err // frame window was destroyed
-	}
-
-	f.borderTopGC, _ = xproto.NewGcontextId(f.client.wm.Conn())
-	xproto.CreateGC(f.client.wm.Conn(), f.borderTopGC, xproto.Drawable(f.borderTop), xproto.GcForeground, []uint32{bgColor})
-	f.borderTopRightGC, _ = xproto.NewGcontextId(f.client.wm.Conn())
-	xproto.CreateGC(f.client.wm.Conn(), f.borderTopRightGC, xproto.Drawable(f.borderTopRight), xproto.GcForeground, []uint32{bgColor})
-
-	return nil
+	f.decorSerial++
+	data := make([]byte, 4)
+	xgb.Put32(data, f.decorSerial)
+	xproto.ChangeProperty(f.client.wm.Conn(), xproto.PropModeReplace, f.client.id, atom,
+		xproto.AtomCardinal, 32, 1, data)
 }
 
-func (f *frame) decorate(force bool) {
-	depth := f.client.wm.X().Screen().RootDepth
-
-	fyne.Do(func() {
-		if f.closed.Load() {
-			return
-		}
-
-		refresh := force
-
-		if refresh {
-			f.freePixmaps()
-		}
-		if f.borderTop == 0 {
-			err := f.createPixmaps(depth)
-			if err != nil {
-				fyne.LogError("New Pixmap Error", err)
-				return
-			}
-			refresh = true
-		}
-
-		if refresh || f.canvas == nil {
-			f.drawDecorationSync(f.borderTop, f.borderTopGC, f.borderTopRight, f.borderTopRightGC, depth)
-		}
-
-		f.applyDecorationToFrame()
-	})
-}
-
-func (f *frame) applyDecorationToFrame() {
-	heightPix := x11.TitleHeight(x11.XWin(f.client))
-	rect := xproto.Rectangle{X: 0, Y: 0, Width: f.width, Height: f.height}
-	if err := xproto.PolyFillRectangleChecked(f.client.wm.Conn(), xproto.Drawable(f.client.id), f.rectGC, []xproto.Rectangle{rect}).Check(); err != nil {
-		return // frame window was destroyed
+// decorate paints the frame over a capture of the frame window: the title
+// strip along the top, plain borders down the sides and bottom and the resize
+// grip where they meet. Safe to call from any goroutine.
+func (f *frame) decorate(img *image.RGBA) {
+	f.decorMu.Lock()
+	defer f.decorMu.Unlock()
+	if f.strip == nil {
+		return
 	}
 
-	rightWidthPix := f.topRightPixelWidth()
-	widthPix := f.width
-	xproto.CopyArea(f.client.wm.Conn(), xproto.Drawable(f.borderTop), xproto.Drawable(f.client.id), f.borderTopGC,
-		0, 0, 0, 0, widthPix, heightPix)
-	xproto.CopyArea(f.client.wm.Conn(), xproto.Drawable(f.borderTopRight), xproto.Drawable(f.client.id), f.borderTopRightGC,
-		0, 0, int16(f.width-rightWidthPix), 0, rightWidthPix, heightPix)
+	w, h := img.Bounds().Dx(), img.Bounds().Dy()
+	border := int(x11.BorderWidth(f.client))
+	title := int(x11.TitleHeight(f.client))
+	bg := image.NewUniform(f.bg)
+	draw.Draw(img, image.Rect(0, 0, w, title), bg, image.Point{}, draw.Src)
+	draw.Draw(img, image.Rect(0, title, border, h), bg, image.Point{}, draw.Src)
+	draw.Draw(img, image.Rect(w-border, title, w, h), bg, image.Point{}, draw.Src)
+	draw.Draw(img, image.Rect(0, h-border, w, h), bg, image.Point{}, draw.Src)
+
+	stripW := f.strip.Bounds().Dx()
+	left := min(w-f.stripRight, stripW-f.stripRight)
+	draw.Draw(img, image.Rect(0, 0, left, title), f.strip, image.Point{}, draw.Src)
+	draw.Draw(img, image.Rect(w-f.stripRight, 0, w, title), f.strip, image.Pt(stripW-f.stripRight, 0), draw.Src)
+
+	gripRect := image.Rectangle{Max: image.Pt(w, h)}
+	gripRect.Min = gripRect.Max.Sub(f.grip.Bounds().Size())
+	for _, band := range []image.Rectangle{image.Rect(0, h-border, w, h), image.Rect(w-border, title, w, h)} {
+		r := gripRect.Intersect(band)
+		draw.Draw(img, r, f.grip, r.Min.Sub(gripRect.Min), draw.Src)
+	}
 }
 
-// drawDecorationSync renders the window border into pixmaps and copies them to the frame.
-// Must be called from the main thread (via fyne.Do) to avoid font cache races.
-func (f *frame) drawDecorationSync(pidTop xproto.Pixmap, drawTop xproto.Gcontext, pidTopRight xproto.Pixmap, drawTopRight xproto.Gcontext, depth byte) {
+// decorationObjectAt returns the deepest visible frame widget at the given
+// frame-relative pixel position that matches fn, or nil. Positions in the
+// right-hand part of the title bar are mapped back to where decorate drew
+// them from. Main goroutine only.
+func (f *frame) decorationObjectAt(relX, relY int16, fn func(fyne.CanvasObject) bool) fyne.CanvasObject {
+	if f.canvas == nil || f.client.Fullscreened() || !f.client.Properties().Decorated() {
+		return nil
+	}
+
+	scale := f.canvas.Scale()
+	if right := int16(f.stripRight); relX > int16(f.width)-right {
+		stripW := int16(f.canvas.Content().Size().Width * scale)
+		relX = stripW - (int16(f.width) - relX)
+	}
+	pos := fyne.NewPos(float32(relX)/scale, float32(relY)/scale)
+	return wm.FindObjectAtPositionMatching(pos, f.canvas.Content(), fn)
+}
+
+func (f *frame) topRightPixelWidth() uint16 {
 	screen := tyde.Instance().Screens().ScreenForWindow(f.client)
 	scale := screen.CanvasScale()
 
-	canMaximize := true
-	if windowSizeFixed(f.client.wm.X(), f.client.win) ||
-		!windowSizeCanMaximize(f.client.wm.X(), f.client) {
-		canMaximize = false
+	iconPix := uint16(0)
+	if f.client.Properties().Icon() != nil {
+		iconPix = x11.ButtonWidth(x11.XWin(f.client))
+	}
+	iconAndBorderPix := iconPix + x11.BorderWidth(x11.XWin(f.client))*2 + uint16(theme.Padding()*scale)
+	if tyde.Instance().Settings().BorderButtonPosition() == "Right" {
+		iconAndBorderPix = 3*iconAndBorderPix - uint16(theme.Padding()*scale)
 	}
 
-	heightPix := x11.TitleHeight(x11.XWin(f.client))
-	rightWidthPix := f.topRightPixelWidth()
-
-	if f.canvas == nil {
-		cnv := software.NewCanvas()
-		cnv.SetPadded(false)
-
-		b := wm.NewBorder(f.client, f.client.Properties().Icon(), canMaximize)
-		trans := &transparentTheme{Theme: theme.DefaultTheme(), frame: f}
-		cnv.SetContent(container.NewThemeOverride(b, trans))
-		f.canvas = cnv
-	} else {
-		b := f.canvas.Content().(*container.ThemeOverride).Content.(*wm.Border)
-		b.CloseIntercept = func() {
-			f.client.Close()
-		}
-		b.SetTitle(f.client.props.Title())
-		b.SetMaximized(f.client.maximized)
-		b.SetIcon(f.client.Properties().Icon())
-		b.Refresh()
-	}
-	f.canvas.SetScale(scale)
-
-	minWidth := f.canvas.Content().MinSize().Width
-	winPixWidth := f.borderTopWidth + rightWidthPix
-	winPtWidth := float32(winPixWidth) / scale
-	drawWidth := fyne.Max(minWidth, winPtWidth)
-	f.canvas.Resize(fyne.NewSize(drawWidth, wmTheme.TitleHeight+16))
-	widthPix := uint16(drawWidth*f.canvas.Scale()) - rightWidthPix
-	img := f.canvas.Capture()
-
-	for i := uint16(0); i < heightPix; i++ {
-		f.copyDecorationPixels(uint32(widthPix), 1, 0, uint32(i), img, pidTop, drawTop, depth)
-	}
-	f.copyDecorationPixels(uint32(rightWidthPix), uint32(heightPix), uint32(uint16(img.Bounds().Dx())-rightWidthPix), 0, img, pidTopRight, drawTopRight, depth)
-}
-
-func (f *frame) freePixmaps() {
-	if f.borderTop != 0 {
-		xproto.FreePixmap(f.client.wm.Conn(), f.borderTop)
-		f.borderTop = 0
-	}
-	if f.borderTopRight != 0 {
-		xproto.FreePixmap(f.client.wm.Conn(), f.borderTopRight)
-		f.borderTopRight = 0
-	}
-
-	if f.rectGC != 0 {
-		xproto.FreeGC(f.client.wm.Conn(), f.rectGC)
-		f.rectGC = 0
-	}
-	if f.borderTopGC != 0 {
-		xproto.FreeGC(f.client.wm.Conn(), f.borderTopGC)
-		f.borderTopGC = 0
-	}
-	if f.borderTopRightGC != 0 {
-		xproto.FreeGC(f.client.wm.Conn(), f.borderTopRightGC)
-		f.borderTopRightGC = 0
-	}
+	return iconAndBorderPix - uint16(theme.Padding()*scale)
 }
 
 func (f *frame) getInnerWindowCoordinates(w uint16, h uint16) (uint32, uint32, uint32, uint32) {
@@ -576,7 +551,7 @@ func (f *frame) maximizeApply() {
 	}
 	f.updateGeometry(int16(head.X+int(maxX)), int16(head.Y+int(maxY)), uint16(maxWidth), uint16(maxHeight), true)
 	f.notifyInnerGeometry()
-	f.applyTheme(true)
+	f.applyTheme()
 }
 
 func (f *frame) mouseDrag(x, y int16) {
@@ -658,56 +633,47 @@ func (f *frame) mouseMotion(x, y int16) {
 	relX := x - f.x
 	relY := y - f.y
 
-	if uint16(relX) > f.width-f.topRightPixelWidth() && f.canvas != nil {
-		relX = int16(f.canvas.Content().Size().Width*f.canvas.Scale()) - (int16(f.width) - relX)
-	}
+	obj := f.decorationObjectAt(relX, relY, func(obj fyne.CanvasObject) bool {
+		if _, ok := obj.(desktop.Cursorable); ok {
+			return true
+		}
 
-	refresh := false
-	obj := wm.FindObjectAtPixelPositionMatching(
-		int(relX), int(relY), f.canvas,
-		func(obj fyne.CanvasObject) bool {
-			_, ok := obj.(desktop.Cursorable)
-			if ok {
-				return true
-			}
+		_, ok := obj.(desktop.Hoverable)
+		return ok
+	})
 
-			_, ok = obj.(desktop.Hoverable)
-			return ok
-		},
-	)
-
+	// Buttons show the pointer; anything else (including the frame's own
+	// resize grip) gets the resize cursor for the edge under the mouse.
 	cursor := x11.DefaultCursor
-	if obj != nil {
-		if cur, ok := obj.(desktop.Cursorable); ok {
-			if cur.Cursor() == desktop.PointerCursor {
-				cursor = x11.CloseCursor
-			}
-		}
-		if hov, ok := obj.(desktop.Hoverable); ok {
-			if f.hovered == nil {
-				hov.MouseIn(&desktop.MouseEvent{})
-				f.hovered = hov
-				refresh = true
-			} else if obj.(desktop.Hoverable) != f.hovered {
-				f.hovered.MouseOut()
-				hov.MouseIn(&desktop.MouseEvent{})
-				f.hovered = hov
-				refresh = true
-			} else {
-				hov.MouseMoved(&desktop.MouseEvent{})
-			}
-		}
-	} else if !f.client.Maximized() && !f.client.Fullscreened() && !windowSizeFixed(f.client.wm.X(), f.client.win) {
+	hov, hoverable := obj.(desktop.Hoverable)
+	if cur, ok := obj.(desktop.Cursorable); ok && cur.Cursor() == desktop.PointerCursor {
+		cursor = x11.CloseCursor
+	} else if !hoverable && !f.client.Maximized() && !f.client.Fullscreened() &&
+		!windowSizeFixed(f.client.wm.X(), f.client.win) {
 		cursor = f.lookupResizeCursor(relX, relY)
 	}
 
-	if obj == nil && f.hovered != nil {
+	refresh := false
+	if hoverable {
+		if f.hovered == nil {
+			hov.MouseIn(&desktop.MouseEvent{})
+			f.hovered = hov
+			refresh = true
+		} else if hov != f.hovered {
+			f.hovered.MouseOut()
+			hov.MouseIn(&desktop.MouseEvent{})
+			f.hovered = hov
+			refresh = true
+		} else {
+			hov.MouseMoved(&desktop.MouseEvent{})
+		}
+	} else if f.hovered != nil {
 		f.hovered.MouseOut()
 		f.hovered = nil
 		refresh = true
 	}
 	if refresh {
-		f.applyTheme(true)
+		f.renderDecoration()
 	}
 	xproto.ChangeWindowAttributes(f.client.wm.Conn(), f.client.id, xproto.CwCursor,
 		[]uint32{uint32(cursor)})
@@ -781,17 +747,10 @@ func (f *frame) mousePress(x, y int16, b xproto.Button, mods uint16) {
 	relX := x - f.x
 	relY := y - f.y
 
-	titlebarX := relX
-	if uint16(titlebarX) > f.width-f.topRightPixelWidth() && f.canvas != nil {
-		titlebarX = int16(f.canvas.Content().Size().Width*f.canvas.Scale()) - (int16(f.width) - titlebarX)
-	}
-	obj := wm.FindObjectAtPixelPositionMatching(
-		int(titlebarX), int(relY), f.canvas,
-		func(obj fyne.CanvasObject) bool {
-			_, ok := obj.(fyne.Tappable)
-			return ok
-		},
-	)
+	obj := f.decorationObjectAt(relX, relY, func(obj fyne.CanvasObject) bool {
+		_, ok := obj.(fyne.Tappable)
+		return ok
+	})
 	if _, ok := obj.(desktop.Cursorable); ok { // a button
 		f.ignoreDrag = true
 		return
@@ -860,21 +819,13 @@ func (f *frame) mouseRelease(x, y int16, b xproto.Button) {
 		return
 	}
 
-	go func() {
-		time.Sleep(time.Second / 2)
-		f.decorate(true)
-	}()
-	go f.mouseReleaseWaitForDoubleClick(int(relX), int(relY))
+	go f.mouseReleaseWaitForDoubleClick(relX, relY)
 }
 
-func (f *frame) mouseReleaseWaitForDoubleClick(relX int, relY int) {
+func (f *frame) mouseReleaseWaitForDoubleClick(relX, relY int16) {
 	var ctx context.Context
 	ctx, f.cancelFunc = context.WithDeadline(context.TODO(), time.Now().Add(time.Millisecond*300))
 	defer f.cancelFunc()
-
-	if uint16(relX) > f.width-f.topRightPixelWidth() {
-		relX = int(f.canvas.Content().Size().Width*f.canvas.Scale()) - (int(f.width) - relX)
-	}
 
 	<-ctx.Done()
 	clickCount := f.clickCount
@@ -883,24 +834,18 @@ func (f *frame) mouseReleaseWaitForDoubleClick(relX int, relY int) {
 
 	fyne.Do(func() {
 		if clickCount == 2 {
-			obj := wm.FindObjectAtPixelPositionMatching(
-				relX, relY, f.canvas,
-				func(obj fyne.CanvasObject) bool {
-					_, ok := obj.(fyne.DoubleTappable)
-					return ok
-				},
-			)
+			obj := f.decorationObjectAt(relX, relY, func(obj fyne.CanvasObject) bool {
+				_, ok := obj.(fyne.DoubleTappable)
+				return ok
+			})
 			if obj != nil {
 				obj.(fyne.DoubleTappable).DoubleTapped(&fyne.PointEvent{})
 			}
 		} else {
-			obj := wm.FindObjectAtPixelPositionMatching(
-				relX, relY, f.canvas,
-				func(obj fyne.CanvasObject) bool {
-					_, ok := obj.(fyne.Tappable)
-					return ok
-				},
-			)
+			obj := f.decorationObjectAt(relX, relY, func(obj fyne.CanvasObject) bool {
+				_, ok := obj.(fyne.Tappable)
+				return ok
+			})
 			if obj != nil {
 				obj.(fyne.Tappable).Tapped(&fyne.PointEvent{})
 			}
@@ -930,7 +875,7 @@ func (f *frame) removeBorder() {
 		f.width = f.childWidth
 		f.height = f.childHeight
 	}
-	f.applyTheme(true)
+	f.applyTheme()
 
 	xproto.ConfigureWindow(f.client.wm.Conn(), f.client.id, xproto.ConfigWindowX|xproto.ConfigWindowY|
 		xproto.ConfigWindowWidth|xproto.ConfigWindowHeight,
@@ -973,22 +918,6 @@ func (f *frame) show() {
 	c.Focus()
 }
 
-func (f *frame) topRightPixelWidth() uint16 {
-	screen := tyde.Instance().Screens().ScreenForWindow(f.client)
-	scale := screen.CanvasScale()
-
-	iconPix := uint16(0)
-	if f.client.Properties().Icon() != nil {
-		iconPix = x11.ButtonWidth(x11.XWin(f.client))
-	}
-	iconAndBorderPix := iconPix + x11.BorderWidth(x11.XWin(f.client))*2 + uint16(theme.Padding()*scale)
-	if tyde.Instance().Settings().BorderButtonPosition() == "Right" {
-		iconAndBorderPix = 3*iconAndBorderPix - uint16(theme.Padding()*scale)
-	}
-
-	return iconAndBorderPix - uint16(theme.Padding()*scale)
-}
-
 func (f *frame) unmaximizeApply(force bool) {
 	// When leaving fullscreen, force is set so we bypass the maximize guards and
 	// always restore the previous geometry, even for fixed-size windows.
@@ -1005,7 +934,7 @@ func (f *frame) unmaximizeApply(force bool) {
 	}
 	f.updateGeometry(f.client.restoreX, f.client.restoreY, f.client.restoreWidth, f.client.restoreHeight, true)
 	f.notifyInnerGeometry()
-	f.applyTheme(true)
+	f.applyTheme()
 }
 
 func (f *frame) queueGeometry(x int16, y int16, width uint16, height uint16, force bool) {
@@ -1030,6 +959,7 @@ func (f *frame) updateGeometry(x, y int16, w, h uint16, force bool) {
 	}
 
 	currentScreen := tyde.Instance().Screens().ScreenForWindow(f.client)
+	widened := w != f.width && f.pendingGeometry == nil // a drag re-renders when it ends
 
 	f.x = x
 	f.y = y
@@ -1058,6 +988,8 @@ func (f *frame) updateGeometry(x, y int16, w, h uint16, force bool) {
 	if newScreen != currentScreen {
 		f.updateScale()
 		tyde.Instance().Screens().SetActive(newScreen)
+	} else if widened {
+		fyne.Do(f.renderDecoration)
 	}
 
 	f.updateInputShape()
@@ -1066,7 +998,7 @@ func (f *frame) updateGeometry(x, y int16, w, h uint16, force bool) {
 func (f *frame) updateScale() {
 	// update border offset for current scale and redraw borders
 	f.updateGeometry(f.x, f.y, f.width, f.height, true)
-	f.applyTheme(true)
+	f.applyTheme()
 }
 
 // updateInputShape sets the frame's X11 input shape to exclude desktop panel areas.

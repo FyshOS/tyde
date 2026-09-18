@@ -6,6 +6,7 @@ import (
 	"image/color"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/theme"
 )
 
@@ -129,6 +130,24 @@ func SetTouchScreen(touch bool) {
 	TitleHeight = titleHeight
 	TitleButtonHeight = titleButtonHeight
 	TitleButtonIconSize = titleButtonIconSize
+}
+
+// WindowShadow returns the shadow drawn beneath a window frame - deeper when
+// the window is active - so that overlay dialogs (app switcher, launcher,
+// menus) float the same way as a focused window. The values match the shadows
+// of a Fyne container.InnerWindow.
+func WindowShadow(active bool) canvas.Shadow {
+	shadow := canvas.Shadow{Color: theme.Color(theme.ColorNameShadow)}
+	if active {
+		shadow.Offset = fyne.NewPos(2, 5)
+		shadow.BlurRadius = 20
+		shadow.Spread = 10
+	} else {
+		shadow.Offset = fyne.NewPos(1, 2)
+		shadow.BlurRadius = 8
+		shadow.Spread = 3
+	}
+	return shadow
 }
 
 // WidgetPanelBackground returns the semi-transparent background matching the users current theme theme

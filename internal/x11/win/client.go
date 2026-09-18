@@ -4,6 +4,8 @@
 package win
 
 import (
+	"image"
+
 	"github.com/BurntSushi/xgb/xproto"
 	"github.com/BurntSushi/xgbutil/ewmh"
 	"github.com/BurntSushi/xgbutil/icccm"
@@ -173,12 +175,13 @@ func (c *client) SetDesktop(id int) {
 	}).Start()
 }
 
-func (c *client) Expose() {
-	if c.frame == nil {
+// Decorate paints this window's frame over a capture of its frame window.
+func (c *client) Decorate(img *image.RGBA) {
+	if c.frame == nil || c.full || !c.Properties().Decorated() {
 		return
 	}
 
-	c.frame.applyTheme(false)
+	c.frame.decorate(img)
 }
 
 func (c *client) Focus() {
@@ -448,7 +451,7 @@ func (c *client) Refresh() {
 		return
 	}
 
-	c.frame.applyTheme(true)
+	c.frame.applyTheme()
 }
 
 func (c *client) SettingsChanged() {
@@ -456,7 +459,9 @@ func (c *client) SettingsChanged() {
 		return
 	}
 
-	c.frame.canvas = nil // force a full re-build of the border widgets
+	fyne.Do(func() {
+		c.frame.canvas = nil // force a full re-build of the border widgets
+	})
 	c.frame.updateScale()
 }
 

@@ -98,6 +98,7 @@ func (w *widgetPanel) askLogout() {
 	bgCol := &color.NRGBA{R: uint8(r), G: uint8(g), B: uint8(b), A: 230}
 
 	bg := canvas.NewRectangle(bgCol)
+	bg.Shadow = wmtheme.WindowShadow(true)
 	icon := canvas.NewImageFromResource(theme.LogoutIcon())
 	iconBox := container.NewWithoutLayout(icon)
 	icon.Resize(fyne.NewSize(92, 92))
@@ -170,6 +171,7 @@ func (w *widgetPanel) showAccountMenu(_ fyne.CanvasObject) {
 	r, g, b, _ := theme.Color(theme.ColorNameOverlayBackground).RGBA()
 	bgCol := &color.NRGBA{R: uint8(r), G: uint8(g), B: uint8(b), A: 230}
 	bg := canvas.NewRectangle(bgCol)
+	bg.Shadow = wmtheme.WindowShadow(true)
 
 	inner := container.NewBorder(items, nil, nil, nil, container.NewScroll(acc))
 	menuContent := container.NewStack(bg, container.NewPadded(inner))

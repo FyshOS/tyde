@@ -659,8 +659,6 @@ func (x *x11WM) runLoop() {
 			x.destroyWindow(ev.Window)
 		case xproto.EnterNotifyEvent:
 			x.handleMouseEnter(ev)
-		case xproto.ExposeEvent:
-			x.exposeWindow(ev.Window)
 		case xproto.FocusInEvent:
 			x.handleFocus(ev.Event)
 		case xproto.FocusOutEvent:
@@ -865,18 +863,6 @@ func (x *x11WM) destroyWindow(win xproto.Window) {
 	c.MarkDestroyed()
 	_ = xproto.DestroyWindowChecked(x.x.Conn(), c.FrameID()).Check()
 	_ = xproto.DestroyWindowChecked(x.x.Conn(), c.ChildID()).Check()
-}
-
-func (x *x11WM) exposeWindow(win xproto.Window) {
-	attrs, err := xproto.GetWindowAttributes(x.x.Conn(), win).Reply()
-	if err == nil && attrs.MapState == xproto.MapStateUnmapped { // ignore expose for windows closing
-		return
-	}
-
-	border := x.clientForWin(win)
-	if border != nil {
-		fyne.Do(border.Expose)
-	}
 }
 
 func (x *x11WM) frameExisting() {

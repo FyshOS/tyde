@@ -11,24 +11,25 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestFindObjectAtPixelPositionMatching(t *testing.T) {
+func TestFindObjectAtPositionMatching(t *testing.T) {
 	l := widget.NewRichTextFromMarkdown("* Test")
 	e := widget.NewEntry()
 	w := test.NewWindow(
 		container.NewGridWithColumns(1, l, e),
 	)
+	root := w.Canvas().Content()
 
-	assert.Equal(t, l, FindObjectAtPixelPositionMatching(8, 8, w.Canvas(), func(fyne.CanvasObject) bool {
+	assert.Equal(t, l, FindObjectAtPositionMatching(fyne.NewPos(2, 2), root, func(fyne.CanvasObject) bool {
 		return true
 	}))
-	assert.Equal(t, e, FindObjectAtPixelPositionMatching(8, 52, w.Canvas(), func(o fyne.CanvasObject) bool {
+	assert.Equal(t, e, FindObjectAtPositionMatching(fyne.NewPos(4, 48), root, func(o fyne.CanvasObject) bool {
 		_, ok := o.(*widget.Entry)
 		return ok
 	}))
-	assert.Nil(t, FindObjectAtPixelPositionMatching(68, 68, w.Canvas(), func(fyne.CanvasObject) bool {
+	assert.Nil(t, FindObjectAtPositionMatching(fyne.NewPos(64, 64), root, func(fyne.CanvasObject) bool {
 		return true
 	}))
-	assert.Nil(t, FindObjectAtPixelPositionMatching(8, 8, w.Canvas(), func(fyne.CanvasObject) bool {
+	assert.Nil(t, FindObjectAtPositionMatching(fyne.NewPos(2, 2), root, func(fyne.CanvasObject) bool {
 		return false
 	}))
 }

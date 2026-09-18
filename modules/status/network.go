@@ -364,6 +364,9 @@ func (n *network) networks() *netman.Networks {
 				}
 			}, win)
 		fyne.Do(func() {
+			entry.OnSubmitted = func(_ string) {
+				d.Submit()
+			}
 			d.Resize(fyne.NewSize(320, d.MinSize().Height))
 			d.Show()
 		})

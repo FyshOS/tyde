@@ -10,6 +10,8 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+
+	wmTheme "fyshos.com/tyde/theme"
 )
 
 func (l *desktop) runFull() {
@@ -103,6 +105,7 @@ func (l *desktop) showMenuFull(menu *fyne.Menu, pos fyne.Position) {
 	r, g, b, _ := theme.Color(theme.ColorNameOverlayBackground).RGBA()
 	bgCol := &color.NRGBA{R: uint8(r), G: uint8(g), B: uint8(b), A: 230}
 	bg := canvas.NewRectangle(bgCol)
+	bg.Shadow = wmTheme.WindowShadow(true)
 
 	menuWidget := widget.NewMenu(menu)
 	content := container.NewStack(bg, menuWidget)

@@ -200,6 +200,8 @@ func (s *Switcher) loadUI() {
 	r, g, b, _ := theme.Color(theme.ColorNameOverlayBackground).RGBA()
 	bgCol := &color.NRGBA{R: uint8(r), G: uint8(g), B: uint8(b), A: 230}
 	bg := canvas.NewRectangle(bgCol)
+	bg.CornerRadius = theme.Size(theme.SizeNameInputRadius) + theme.Padding()
+	bg.Shadow = wmTheme.WindowShadow(true)
 
 	inner := container.NewPadded(container.NewHBox(s.icons...))
 	s.content = container.NewStack(bg, inner)

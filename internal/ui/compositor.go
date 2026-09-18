@@ -2,15 +2,18 @@ package ui
 
 import (
 	"image"
+	"image/color"
 	"sync"
 	"sync/atomic"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
 	"fyshos.com/tyde"
+	wmTheme "fyshos.com/tyde/theme"
 )
 
 // WindowImage holds the Fyne image and pixel-space geometry for a single
@@ -27,8 +30,14 @@ type WindowImage struct {
 	X, Y int16
 	W, H uint16
 
+	// Shadow is set for a managed window, which is drawn over a drop shadow;
+	// Active deepens that shadow for the window that has focus.
+	Shadow, Active bool
+
 	Back    atomic.Value // image.Image — latest frame from compositor
 	Pending atomic.Bool  // true = refresh requested, not yet rendered
+
+	shadow *canvas.Rectangle // drawn beneath Img when Shadow is set
 }
 
 // CompositorWidget is a Fyne widget that displays composited window images.
@@ -130,7 +139,8 @@ func (cw *CompositorWidget) PlaceWindow(wi *WindowImage) {
 	cw.placeWindow(wi)
 }
 
-// placeWindow positions and sizes a window image and its accessory container.
+// placeWindow positions and sizes a window image, its shadow and its accessory
+// container.
 func (cw *CompositorWidget) placeWindow(wi *WindowImage) {
 	scale := float32(1)
 	if cw.Screen != nil {
@@ -141,6 +151,18 @@ func (cw *CompositorWidget) placeWindow(wi *WindowImage) {
 
 	wi.Img.Move(pos)
 	wi.Img.Resize(size)
+	if wi.Shadow {
+		if wi.shadow == nil {
+			wi.shadow = canvas.NewRectangle(color.Transparent)
+		}
+		wi.shadow.Move(pos)
+		wi.shadow.Resize(size)
+		wi.shadow.CornerRadius = theme.Size(theme.SizeNameInnerWindowRadius)
+		if shadow := wmTheme.WindowShadow(wi.Active); wi.shadow.Shadow != shadow {
+			wi.shadow.Shadow = shadow
+			wi.shadow.Refresh()
+		}
+	}
 	if acc, ok := cw.accessories[wi.ID]; ok {
 		// Unlike a canvas object, moving a container always marks the canvas
 		// dirty - so only do it when the window really has moved, or every
@@ -225,14 +247,25 @@ func (r *compositorRenderer) Refresh() {
 	objs := make([]fyne.CanvasObject, 0, len(r.widget.images))
 	for _, wi := range r.widget.images {
 		// Swap back→front: pick up the latest frame from the compositor.
-		if wi.Pending.Load() {
+		swapped := wi.Pending.Load()
+		if swapped {
 			if back := wi.Back.Load(); back != nil {
 				wi.Img.Image = back.(image.Image)
 			}
 			wi.Pending.Store(false)
 		}
 
+		before := wi.Img.Size()
 		r.widget.placeWindow(wi)
+		// Only an image with new content or a new size needs its texture
+		// rebuilt; refreshing every child on each capture is what makes a
+		// resize crawl.
+		if swapped || wi.Img.Size() != before {
+			wi.Img.Refresh()
+		}
+		if wi.Shadow {
+			objs = append(objs, wi.shadow)
+		}
 		objs = append(objs, wi.Img)
 
 		// Decorations sitting on this window are drawn directly above it (and so
@@ -252,7 +285,8 @@ func (r *compositorRenderer) Refresh() {
 	}
 	objs = append(objs, r.widget.accessoriesTop)
 
-	// Update the stable container's objects in place — never replace the container itself.
+	// Update the stable container's objects in place — never replace the
+	// container itself — and repaint without refreshing every child.
 	r.cont.Objects = objs
-	r.cont.Refresh()
+	canvas.Refresh(r.cont)
 }

@@ -4,10 +4,17 @@
 package x11
 
 import (
+	"image"
+
 	"github.com/BurntSushi/xgb/xproto"
 
 	"fyshos.com/tyde"
 )
+
+// DecorationProperty is the name of a property on a frame window whose value
+// the window manager changes each time it has new decorations to paint, so
+// that the compositor captures the frame again.
+const DecorationProperty = "_TYDE_DECORATION"
 
 // XWin describes the additional functions that X windows need to expose to be managed
 type XWin interface {
@@ -20,7 +27,9 @@ type XWin interface {
 	SizeMax() (int, int)
 	Geometry() (int, int, uint, uint)
 
-	Expose()
+	// Decorate paints the window's frame decoration over a capture of its
+	// frame window. Safe to call from any goroutine.
+	Decorate(*image.RGBA)
 	MarkDestroyed()
 	Reframe()
 	Refresh()

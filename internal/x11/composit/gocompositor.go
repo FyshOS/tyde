@@ -62,6 +62,7 @@ type client struct {
 
 var (
 	defaultScreen int
+	xu            *xgbutil.XUtil
 	rootWindow    xproto.Window
 	rootWidth     uint16
 	rootHeight    uint16
@@ -69,6 +70,7 @@ var (
 	clients       []*client
 
 	opacityAtom    xproto.Atom
+	decorationAtom xproto.Atom
 	netWmNameAtom  xproto.Atom
 	netWmStateAtom xproto.Atom
 	utf8StringAtom xproto.Atom
@@ -153,6 +155,12 @@ func setup(conn *xgb.Conn) error {
 	}
 	opacityAtom = opacityAtomReply.Atom
 
+	decorationAtomReply, err := xproto.InternAtom(conn, false, uint16(len(x11.DecorationProperty)), x11.DecorationProperty).Reply()
+	if err != nil {
+		return err
+	}
+	decorationAtom = decorationAtomReply.Atom
+
 	stateAtomName := "_NET_WM_STATE"
 	stateAtomReply, err := xproto.InternAtom(conn, false, uint16(len(stateAtomName)), stateAtomName).Reply()
 	if err != nil {
@@ -193,6 +201,7 @@ func Run(done chan struct{}, screenComps []ui.ScreenCompositors) error {
 	if err != nil {
 		return err
 	}
+	xu = c
 
 	conn := c.Conn()
 	defer conn.Close()
@@ -391,6 +400,12 @@ func Run(done chan struct{}, screenComps []ui.ScreenCompositors) error {
 					if e.Atom == opacityAtom {
 						if c := getClientFromWindow(e.Window); c != nil {
 							updateOpacity(conn, 1, c)
+							allDamage = true
+						}
+					}
+					if e.Atom == decorationAtom { // the WM has a new frame to paint
+						if c := getClientFromWindow(e.Window); c != nil {
+							c.damaged = true
 							allDamage = true
 						}
 					}
@@ -866,12 +881,19 @@ func captureClient(conn *xgb.Conn, ws *widgets, c *client, refreshed map[*ui.Com
 	}
 
 	w := wmWindow(c)
+	if xw, ok := w.(x11.XWin); ok {
+		xw.Decorate(img) // the WM paints the frame over its own border pixels
+	}
+	radius := float32(0)
+	fyne.DoAndWait(func() {
+		radius = theme.Size(theme.SizeNameInnerWindowRadius)
+	})
 	if w == nil || (!w.Fullscreened() && !w.Maximized()) {
 		scale := float32(1)
 		if len(ws.screens) > 0 {
 			scale = ws.screens[0].screen.CanvasScale()
 		}
-		roundCorners(img, int(theme.Size(theme.SizeNameInnerWindowRadius)*scale))
+		roundCorners(img, int(radius*scale))
 	}
 
 	translucency := computeTranslucency(conn, c)
@@ -997,6 +1019,9 @@ func snapshotWindows(conn *xgb.Conn, screen *tyde.Screen, offsetY int) image.Ima
 		if img == nil {
 			continue
 		}
+		if xw, ok := w.(x11.XWin); ok {
+			xw.Decorate(img)
+		}
 		if w == nil || (!w.Fullscreened() && !w.Maximized()) {
 			roundCorners(img, int(theme.Size(theme.SizeNameInnerWindowRadius)*scale))
 		}
@@ -1033,9 +1058,11 @@ func checkPending(c *client, ws *widgets) (uint32, bool, bool) {
 	return winID, isFS, pending
 }
 
-// refreshTranslucency updates the translucency of all visible windows
-// without recapturing their content.
+// refreshTranslucency updates the translucency and shadow of all visible
+// windows without recapturing their content.
 func refreshTranslucency(conn *xgb.Conn, ws *widgets) {
+	activeWin, _ := x11.WindowActiveGet(xu)
+
 	changed := false
 	for _, c := range clients {
 		if c.skipped || c.fullscreened || c.attributes.MapState != xproto.MapStateViewable {
@@ -1043,6 +1070,8 @@ func refreshTranslucency(conn *xgb.Conn, ws *widgets) {
 		}
 		winID := uint32(c.win)
 		translucency := computeTranslucency(conn, c)
+		managed, _ := wmWindow(c).(x11.XWin) // menus and the like cast no shadow
+		active := managed != nil && managed.ChildID() == activeWin
 
 		for i := range ws.screens {
 			sw := &ws.screens[i]
@@ -1053,6 +1082,10 @@ func refreshTranslucency(conn *xgb.Conn, ws *widgets) {
 				}
 				if wi.Img.Translucency != translucency {
 					wi.Img.Translucency = translucency
+					changed = true
+				}
+				if wi.Shadow != (managed != nil) || wi.Active != active {
+					wi.Shadow, wi.Active = managed != nil, active
 					changed = true
 				}
 			}

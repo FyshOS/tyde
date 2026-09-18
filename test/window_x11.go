@@ -1,6 +1,10 @@
 package test
 
-import "github.com/BurntSushi/xgb/xproto"
+import (
+	"image"
+
+	"github.com/BurntSushi/xgb/xproto"
+)
 
 // just stubs so we can use the generic test Window in X11 tests
 
@@ -9,8 +13,8 @@ func (w *Window) ChildID() xproto.Window {
 	return 0
 }
 
-// Expose is called when this window has been revealed but not changed
-func (w *Window) Expose() {
+// Decorate paints the window frame over a capture of its frame window
+func (w *Window) Decorate(*image.RGBA) {
 	// no-op
 }
 

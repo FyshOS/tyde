@@ -1,7 +1,8 @@
 codeberg.org/sdassow/unyts v0.5.1 h1:7mgAqMsgrpsFNXKXFZOzXDlCb3hAW4q0mYyOIN31lLk=
 codeberg.org/sdassow/unyts v0.5.1/go.mod h1:G7IVCrmY/57ojDjMqkmIlRpyLvLF5FrQEbaJv5RzS2k=
-fyne.io/fyne/v2 v2.8.1-rc3 h1:wvnzBA7Yx5UN8c52aOVhRtVdSVDI7zHf+P29nnwa06I=
 fyne.io/fyne/v2 v2.8.1-rc3/go.mod h1:kpeuFrClm0fiAgJYr2soTfwKMT5rzNcSKzmgGjxvHOY=
+fyne.io/fyne/v2 v2.8.2-0.20260917213848-4df059826be6 h1:4Ei5VDsdyI+5ZHBfAVxoemyOSMP6GRCVsWY6Zh905+k=
+fyne.io/fyne/v2 v2.8.2-0.20260917213848-4df059826be6/go.mod h1:8bBm+lI+VRjvKUHjWHn3wqcZJbqn+PuiYaCMciOjUnE=
 fyne.io/systray v1.12.3-0.20260810170012-af4e8e793ec4 h1:149/+Wa5EsLLXfyj2pdTmvnQf2VIlgCIwSjcCTHYhIo=
 fyne.io/systray v1.12.3-0.20260810170012-af4e8e793ec4/go.mod h1:RVwqP9nYMo7h5zViCBHri2FgjXF7H2cub7MAq4NSoLs=
 github.com/ActiveState/termtest/conpty v0.5.0 h1:JLUe6YDs4Jw4xNPCU+8VwTpniYOGeKzQg4SM2YHQNA8=
@@ -65,12 +66,14 @@ github.com/fyne-io/xgbutil v0.0.0-20260101194047-3bb9400654c0 h1:LdWt8WtSAY8l0DP
 github.com/fyne-io/xgbutil v0.0.0-20260101194047-3bb9400654c0/go.mod h1:vPqYMuTmTyrLNDQWQXy9lqdnV+WRQn6jhaSon8TppBs=
 github.com/go-gl/gl v0.0.0-20260331235117-4566fea9a276 h1:IO5P06Pcj9K04d+l4nrf3c2U56+dAotIFG6u4P1wAHI=
 github.com/go-gl/gl v0.0.0-20260331235117-4566fea9a276/go.mod h1:9YTyiznxEY1fVinfM7RvRcjRHbw2xLBJ3AAGIT0I4Nw=
-github.com/go-gl/glfw/v3.4/glfw v0.1.0-pre.1.0.20260707082822-2a407d02d01a h1:HWK0MBggT/T6YH7VffE10xBIhqeTq8JzIUPJXrRy87g=
-github.com/go-gl/glfw/v3.4/glfw v0.1.0-pre.1.0.20260707082822-2a407d02d01a/go.mod h1:T5Dn0JwIJOX1euPZ/iT4tq6nFYtmukjcYa7937HuYK8=
+github.com/go-gl/glfw/v3.4/glfw v0.1.0-pre.2 h1:ez76TQInhkDIMobWbOFcPJw6FeB7coXRAVZpKwF8NBg=
+github.com/go-gl/glfw/v3.4/glfw v0.1.0-pre.2/go.mod h1:T5Dn0JwIJOX1euPZ/iT4tq6nFYtmukjcYa7937HuYK8=
 github.com/go-text/render v0.2.1 h1:qwHhxqGUjjg4L0XyJWj7M7bpY75NZM+kBpv2Yfw5mcg=
 github.com/go-text/render v0.2.1/go.mod h1:HCCAq8MUlm/WRcXshBb4K/n+IkjeXQ1c2Ba+yICSm0A=
 github.com/go-text/typesetting v0.3.4 h1:YYurUOtEb9kGSOz4uE3k4OpBGsp1dDL8+fjCeaFamAU=
 github.com/go-text/typesetting v0.3.4/go.mod h1:4qZCQphq4KSgGTAeI0uMEkVbROgfah8BuyF5LRYr7XY=
+github.com/go-text/typesetting v0.3.5 h1:XZPUooClHY0Vf/rFyUyuPRNEkawARaFzLMQcXLSEyPk=
+github.com/go-text/typesetting v0.3.5/go.mod h1:XZO1hD+nQVyvVa5IicQk7FsCa4PFQaJ2soWAP1f//68=
 github.com/go-text/typesetting-utils v0.0.0-20260223113751-2d88ac90dae3 h1:drBZzMgdYPbmyXqOto4YhhJGrFIQCX94FpR4MzTCsos=
 github.com/go-text/typesetting-utils v0.0.0-20260223113751-2d88ac90dae3/go.mod h1:3/62I4La/HBRX9TcTpBj4eipLiwzf+vhI+7whTc9V7o=
 github.com/godbus/dbus/v5 v5.2.2 h1:TUR3TgtSVDmjiXOgAAyaZbYmIeP3DPkld3jgKGV8mXQ=

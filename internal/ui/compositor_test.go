@@ -6,6 +6,8 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
+
+	wmTheme "fyshos.com/tyde/theme"
 )
 
 // indexOf returns the position of obj in objs, or -1. Accessories are drawn
@@ -108,5 +110,36 @@ func TestCompositorAccessoryFollowsItsWindow(t *testing.T) {
 	}
 	if pet.Position() != offset {
 		t.Fatalf("the module's placement was overwritten: %v, expected %v", pet.Position(), offset)
+	}
+}
+
+// TestCompositorShadowBeneathManagedWindow verifies that a managed window is
+// drawn over a shadow that follows its geometry and focus, and that an
+// unmanaged one (a menu, say) is just its image.
+func TestCompositorShadowBeneathManagedWindow(t *testing.T) {
+	cw := NewCompositorWidget(nil) // no screen => canvas scale of 1
+	plain := cw.EnsureWindow(1)
+	win := cw.EnsureWindow(2)
+	win.Shadow, win.Active = true, true
+	win.X, win.Y, win.W, win.H = 100, 200, 400, 300
+
+	r := cw.CreateRenderer().(*compositorRenderer)
+	r.Refresh()
+	objs := r.cont.Objects
+
+	if len(objs) != 4 || objs[0] != plain.Img || objs[1] != win.shadow || objs[2] != win.Img {
+		t.Fatal("expected the plain image, then the shadow beneath the managed window's image")
+	}
+	if win.shadow.Position() != fyne.NewPos(100, 200) || win.shadow.Size() != fyne.NewSize(400, 300) {
+		t.Fatalf("shadow should cover the window geometry, got %v %v", win.shadow.Position(), win.shadow.Size())
+	}
+	if win.shadow.Shadow != wmTheme.WindowShadow(true) {
+		t.Fatal("focused window should have the active shadow")
+	}
+
+	win.Active = false
+	r.Refresh()
+	if win.shadow.Shadow != wmTheme.WindowShadow(false) {
+		t.Fatal("unfocused window should have the inactive shadow")
 	}
 }

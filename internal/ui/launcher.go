@@ -250,6 +250,7 @@ func (l *picker) show() {
 	th := l.entry.Theme()
 	pad := theme.Padding()
 	l.bg.CornerRadius = th.Size(theme.SizeNameInputRadius) + pad
+	l.bg.Shadow = wmTheme.WindowShadow(true)
 
 	inner := container.NewBorder(l.entry, nil, nil, nil, l.appScroll)
 	content := container.NewStack(container.NewWithoutLayout(l.bg), container.NewPadded(inner))

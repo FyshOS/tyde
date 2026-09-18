@@ -7,15 +7,14 @@ import (
 	"fyne.io/fyne/v2/test"
 )
 
-// FindObjectAtPixelPositionMatching looks for objects in the given canvas that are under pixel
-// position at x, y. Objects must match the criteria in 'fn' and the first match will be returned.
-func FindObjectAtPixelPositionMatching(x, y int, c fyne.Canvas, fn func(fyne.CanvasObject) bool) fyne.CanvasObject {
-	if c == nil {
+// FindObjectAtPositionMatching looks for the deepest visible object within root
+// that lies under pos, given relative to root's top-left, and that matches fn.
+func FindObjectAtPositionMatching(pos fyne.Position, root fyne.CanvasObject, fn func(fyne.CanvasObject) bool) fyne.CanvasObject {
+	if root == nil {
 		return nil
 	}
 
-	pos := fyne.NewPos(unscaleInt(c, x), unscaleInt(c, y))
-	obj, _ := findObjectAtPositionMatching(pos, fn, c.Content())
+	obj, _ := findObjectAtPositionMatching(pos.Add(root.Position()), fn, root)
 	return obj
 }
 
@@ -70,15 +69,6 @@ func findObjectAtPositionMatching(mouse fyne.Position, matches func(object fyne.
 	}
 
 	return found, foundPos
-}
-
-func unscaleInt(c fyne.Canvas, v int) float32 {
-	switch c.Scale() {
-	case 1.0:
-		return float32(v)
-	default:
-		return float32(v) / c.Scale()
-	}
 }
 
 func walkObjectTree(

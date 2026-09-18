@@ -38,7 +38,20 @@ func (x *x11WM) handleActiveWin(ev xproto.ClientMessageEvent) {
 	if !canFocus && !notifyFocus {
 		return
 	}
+	previous, _ := x11.WindowActiveGet(x.x)
 	windowActiveSet(x.x, ev.Window)
+	// Redraw both frames for the new active state here rather than waiting
+	// for X focus events: those can arrive before the property changes (the
+	// app switcher holds a keyboard grab) or only once a WM_TAKE_FOCUS client
+	// gets round to taking focus.
+	if previous != ev.Window {
+		if c := x.clientForWin(previous); c != nil {
+			fyne.Do(c.Refresh)
+		}
+		if c := x.clientForWin(ev.Window); c != nil {
+			fyne.Do(c.Refresh)
+		}
+	}
 	if canFocus {
 		if c := x.clientForWin(ev.Window); c != nil && c.Iconic() {
 			return // don't try to focus iconic windows
