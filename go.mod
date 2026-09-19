@@ -33,11 +33,11 @@ require (
 require github.com/creack/pty v1.1.21
 
 require (
-	github.com/FyshOS/dryvers v0.0.0-20260222162433-1ffb8226c1cf
-	github.com/FyshOS/fyqr v0.0.0-20260624213738-536424772cba
+	github.com/FyshOS/dryvers v0.0.0-20260822220245-fe9aeb6f880e
+	github.com/FyshOS/fyqr v0.0.0-20260624214941-a4d5d5c1e9e1
 	github.com/FyshOS/networks v0.0.0-20260817130109-5d9f0ce6d908
 	github.com/FyshOS/screens v0.0.0-20260731162110-c150f5b008bd
-	github.com/fyne-io/terminal v0.0.0-20251011215138-c2ed69d5a2d6
+	github.com/fyne-io/terminal v0.0.0-20260618170948-86c23cc49e34
 	github.com/tmc/langchaingo v0.1.14
 	golang.org/x/image v0.24.0
 	golang.org/x/sys v0.35.0
