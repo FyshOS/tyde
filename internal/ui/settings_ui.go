@@ -506,8 +506,8 @@ func (d *settingsUI) loadDesktopsScreen() fyne.CanvasObject {
 	populateNames()
 
 	return container.NewBorder(
-		container.NewVBox(widget.NewRichTextFromMarkdown("## Virtual Desktops"),
-			widget.NewForm(widget.NewFormItem("Number of desktops", count)),
+		container.NewVBox(widget.NewRichTextFromMarkdown("## Desktop Spaces"),
+			widget.NewForm(widget.NewFormItem("Number of spaces", count)),
 			widget.NewSeparator(), widget.NewRichTextFromMarkdown("## Names\n\nLeave blank to show the number.")),
 		nil, nil, nil, container.NewVScroll(names),
 	)
@@ -770,7 +770,7 @@ func (w *widgetPanel) showSettings(panel string) {
 		switch mod.Name {
 		case desktops.ModuleName:
 			groups[1].panels = append(groups[1].panels,
-				&settingsPanel{title: "Desktops", icon: theme.GridIcon(), build: ui.loadDesktopsScreen})
+				&settingsPanel{title: "Spaces", icon: theme.GridIcon(), build: ui.loadDesktopsScreen})
 		case updates.ModuleName:
 			groups[2].panels = append(groups[2].panels,
 				&settingsPanel{title: "Updates", icon: wmtheme.UpdateIcon, build: updates.SettingsContent})

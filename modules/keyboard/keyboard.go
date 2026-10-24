@@ -14,7 +14,7 @@ import (
 	wmTheme "fyshos.com/tyde/theme"
 )
 
-const ModuleName = "Virtual Keyboard"
+const ModuleName = "TouchScreen Keyboard"
 
 var meta = tyde.ModuleMetadata{
 	Name:        ModuleName,

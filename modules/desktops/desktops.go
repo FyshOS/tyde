@@ -12,7 +12,7 @@ import (
 )
 
 // ModuleName is the name the virtual desktops module is registered and enabled under.
-const ModuleName = "Virtual Desktops"
+const ModuleName = "Spaces"
 
 var desksMeta = tyde.ModuleMetadata{
 	Name:        ModuleName,
