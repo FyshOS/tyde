@@ -120,6 +120,9 @@ const (
 	// capture would show stale content; a client that never repaints (one that
 	// is hung, say) must not leave the window stuck at its old size though.
 	resizeGrace = 150 * time.Millisecond
+
+	// frameInterval paces capture passes. Avoid capturing more frequently than this.
+	frameInterval = time.Second / 60
 )
 
 type cookieReply[R any] interface {
@@ -368,6 +371,7 @@ func Run(done chan struct{}, screenComps []ui.ScreenCompositors) error {
 		}
 	}
 
+	lastPass := time.Time{}
 	for {
 		select {
 		case <-done:
@@ -375,109 +379,116 @@ func Run(done chan struct{}, screenComps []ui.ScreenCompositors) error {
 		default:
 		}
 
-		// Block until at least one event arrives.
+		// Block until at least one event arrives, then drain all pending events.
 		ev, err := conn.WaitForEvent()
-		var repaint bool
-
-		if err != nil {
-			var badDamageError damage.BadDamageError
-			if errors.As(err, &badDamageError) {
-				repaint = true
-			} else {
-				fyne.LogError("error waiting for event", err)
-			}
+		if err != nil && !isBadDamage(err) {
+			fyne.LogError("error waiting for event", err)
 		}
+		repaint := handleEvent(conn, ws, ev, err)
+		repaint = drainEvents(conn, ws) || repaint
 
-		// Process the first event and then drain all queued events so
-		// that multiple damage notifications are coalesced into a
-		// single capture pass.
-		for {
-			if ev != nil {
-				switch e := ev.(type) {
-				case xproto.CreateNotifyEvent:
-					if err := addClient(conn, e.Window); err != nil {
-						fyne.LogError("failed to add client", err)
-						repaint = true
-					}
-				case xproto.ConfigureNotifyEvent:
-					if err := configureClient(conn, ws, e); err != nil {
-						fyne.LogError("failed to configure client", err)
-						repaint = true
-					}
-				case xproto.DestroyNotifyEvent:
-					destroyWin(conn, ws, e.Window)
-				case xproto.MapNotifyEvent:
-					if err := mapWin(conn, ws, e.Window); err != nil {
-						fyne.LogError("failed to map window", err)
-						repaint = true
-					}
-				case xproto.UnmapNotifyEvent:
-					unmapWin(conn, ws, e.Window)
-				case xproto.ReparentNotifyEvent:
-					if e.Parent == rootWindow {
-						if err := addClient(conn, e.Window); err != nil {
-							fyne.LogError("failed to add client", err)
-							repaint = true
-						}
-					} else {
-						destroyWin(conn, ws, e.Window)
-					}
-				case xproto.CirculateNotifyEvent:
-					circulateClient(ws, e)
-				case xproto.PropertyNotifyEvent:
-					if e.Atom == opacityAtom {
-						if c := getClientFromWindow(e.Window); c != nil {
-							updateOpacity(conn, 1, c)
-							allDamage = true
-						}
-					}
-					if e.Atom == decorationAtom { // the WM has a new frame to paint
-						// A window awaiting its repaint after a resize is painted
-						// with the latest frame when that capture happens.
-						if c := getClientFromWindow(e.Window); c != nil && c.repaintTimer == nil {
-							c.dirty = wholeWindow
-							allDamage = true
-						}
-					}
-					if e.Atom == netWmStateAtom {
-						if cl := getClientFromWindow(e.Window); cl != nil {
-							updateFullscreen(conn, ws, cl)
-						}
-					}
-				case damage.NotifyEvent:
-					if err := damageClient(conn, &e); err != nil {
-						fyne.LogError("failed to send damage notify", err)
-						repaint = true
-					}
-				}
-			}
-
-			// Poll for more events without blocking.
-			ev, err = conn.PollForEvent()
-			if err != nil {
-				var badDamageError damage.BadDamageError
-				if errors.As(err, &badDamageError) {
-					repaint = true
-				}
-			}
-			if ev == nil && err == nil {
-				break // queue drained
-			}
-		}
-
-		// Pick up any screen-set change handed in from the desktop. A new
-		// screen always brings X events (its root window is mapped) so the
-		// loop wakes promptly; applyPending repopulates it on its own.
+		// Pick up any screen-set change handed in from the desktop.
 		if ws.applyPending(conn) {
 			repaint = true
 		}
+		if !allDamage && !repaint {
+			continue
+		}
 
-		if allDamage || repaint {
-			refreshTranslucency(conn, ws)
-			refreshWindows(conn, ws)
-			allDamage = false
+		// Pace capture passes to the renderer's frame rate - avoid stacked redraws etc.
+		if wait := frameInterval - time.Since(lastPass); wait > 0 {
+			time.Sleep(wait)
+			drainEvents(conn, ws)
+		}
+		lastPass = time.Now()
+		refreshTranslucency(conn, ws)
+		refreshWindows(conn, ws)
+		allDamage = false
+	}
+}
+
+// drainEvents handles every event already queued, without blocking, and
+// reports whether any of them calls for a repaint.
+func drainEvents(conn *xgb.Conn, ws *widgets) (repaint bool) {
+	for {
+		ev, err := conn.PollForEvent()
+		if ev == nil && err == nil {
+			return repaint
+		}
+		if handleEvent(conn, ws, ev, err) {
+			repaint = true
 		}
 	}
+}
+
+// handleEvent acts on one event from the compositor's connection, or on the
+// error delivered in its place, and reports whether a repaint is needed.
+func handleEvent(conn *xgb.Conn, ws *widgets, ev xgb.Event, err error) (repaint bool) {
+	if err != nil {
+		return isBadDamage(err)
+	}
+	switch e := ev.(type) {
+	case xproto.CreateNotifyEvent:
+		if err := addClient(conn, e.Window); err != nil {
+			fyne.LogError("failed to add client", err)
+			repaint = true
+		}
+	case xproto.ConfigureNotifyEvent:
+		if err := configureClient(conn, ws, e); err != nil {
+			fyne.LogError("failed to configure client", err)
+			repaint = true
+		}
+	case xproto.DestroyNotifyEvent:
+		destroyWin(conn, ws, e.Window)
+	case xproto.MapNotifyEvent:
+		if err := mapWin(conn, ws, e.Window); err != nil {
+			fyne.LogError("failed to map window", err)
+			repaint = true
+		}
+	case xproto.UnmapNotifyEvent:
+		unmapWin(conn, ws, e.Window)
+	case xproto.ReparentNotifyEvent:
+		if e.Parent == rootWindow {
+			if err := addClient(conn, e.Window); err != nil {
+				fyne.LogError("failed to add client", err)
+				repaint = true
+			}
+		} else {
+			destroyWin(conn, ws, e.Window)
+		}
+	case xproto.CirculateNotifyEvent:
+		circulateClient(ws, e)
+	case xproto.PropertyNotifyEvent:
+		if e.Atom == opacityAtom {
+			if c := getClientFromWindow(e.Window); c != nil {
+				updateOpacity(conn, 1, c)
+				allDamage = true
+			}
+		}
+		if e.Atom == decorationAtom { // the WM has a new frame to paint
+			// A window awaiting its repaint after a resize is painted
+			// with the latest frame when that capture happens.
+			if c := getClientFromWindow(e.Window); c != nil && c.repaintTimer == nil {
+				c.dirty = wholeWindow
+				allDamage = true
+			}
+		}
+		if e.Atom == netWmStateAtom {
+			if cl := getClientFromWindow(e.Window); cl != nil {
+				updateFullscreen(conn, ws, cl)
+			}
+		}
+	case damage.NotifyEvent:
+		damageClient(conn, &e)
+	}
+	return repaint
+}
+
+// isBadDamage reports whether err is the X server rejecting a damage request,
+// as happens when a window goes away mid-capture: the pass is simply redone.
+func isBadDamage(err error) bool {
+	var badDamageError damage.BadDamageError
+	return errors.As(err, &badDamageError)
 }
 
 func registerManager(conn *xgb.Conn, screen int) error {
@@ -981,10 +992,7 @@ func decorateFrame(ws *widgets, c *client, img *image.RGBA) {
 	if w != nil && (w.Fullscreened() || w.Maximized()) {
 		return
 	}
-	radius := float32(0)
-	fyne.DoAndWait(func() {
-		radius = theme.Size(theme.SizeNameInnerWindowRadius)
-	})
+	radius := theme.Size(theme.SizeNameInnerWindowRadius)
 	scale := float32(1)
 	if len(ws.screens) > 0 {
 		scale = ws.screens[0].screen.CanvasScale()
@@ -1579,19 +1587,16 @@ func circulateClient(ws *widgets, e xproto.CirculateNotifyEvent) {
 	allDamage = true
 }
 
-func damageClient(conn *xgb.Conn, e *damage.NotifyEvent) error {
+func damageClient(conn *xgb.Conn, e *damage.NotifyEvent) {
 	client := getClientFromWindow(xproto.Window(e.Drawable))
 	if client == nil {
-		return nil
+		return
 	}
 
-	if err := damage.SubtractChecked(conn, client.damage, 0, 0).Check(); err != nil {
-		return err
-	}
+	damage.Subtract(conn, client.damage, 0, 0)
 
 	client.dirty = client.dirty.Union(damagedRegion(e.Area, client.geom.BorderWidth))
 	allDamage = true
-	return nil
 }
 
 func updateOpacity(conn *xgb.Conn, fallback float32, c *client) {
