@@ -17,6 +17,8 @@ github.com/BurntSushi/toml v1.6.0 h1:dRaEfpa2VI55EwlIW72hMRHdWouJeRF7TPYhI+AUQjk
 github.com/BurntSushi/toml v1.6.0/go.mod h1:ukJfTF/6rtPPRCnwkur4qwRxa8vTRFBF0uk2lLoLwho=
 github.com/FyshOS/appie v0.1.1-0.20260821081836-ef3e2e6dcddb h1:+3wrrU0eeSgs1KoPQh0TSdsuFVgoojyWLgvi16BTPyo=
 github.com/FyshOS/appie v0.1.1-0.20260821081836-ef3e2e6dcddb/go.mod h1:Gtvb1fKDXbE9HjMtoYdB2MPSSGy6PdtMl0TC9dSF8q0=
+github.com/FyshOS/appie v0.1.1-0.20261024110852-0e2eb921fbec h1:VufpQwVOjnRGckhZokPEQXpHCXzQOsRiD2R2kioI3UQ=
+github.com/FyshOS/appie v0.1.1-0.20261024110852-0e2eb921fbec/go.mod h1:Gtvb1fKDXbE9HjMtoYdB2MPSSGy6PdtMl0TC9dSF8q0=
 github.com/FyshOS/backgrounds v0.1.1-0.20260808235716-a384bdf00565 h1:/XvRl5IwSOxG8A39KHoR+/jYImG6e/U880syCgesGtU=
 github.com/FyshOS/backgrounds v0.1.1-0.20260808235716-a384bdf00565/go.mod h1:kKw27b5wnA9VRNamXgHT7RrAQa3niyX4DKO18aR7yII=
 github.com/FyshOS/dryvers v0.0.0-20260822220245-fe9aeb6f880e h1:IWJnpWxDvmIfRntbMtWLyE/lyypssNZtGc4mVOr3jaM=

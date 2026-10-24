@@ -8,7 +8,7 @@ require (
 	github.com/BurntSushi/toml v1.6.0 // indirect
 	github.com/BurntSushi/xgb v0.0.0-20210121224620-deaf085860bc
 	github.com/BurntSushi/xgbutil v0.0.0-20190907113008-ad855c713046
-	github.com/FyshOS/appie v0.1.1-0.20260821081836-ef3e2e6dcddb
+	github.com/FyshOS/appie v0.1.1-0.20261024110852-0e2eb921fbec
 	github.com/FyshOS/backgrounds v0.1.1-0.20260808235716-a384bdf00565
 	github.com/FyshOS/fancyfs v0.0.1 // indirect
 	github.com/FyshOS/fyles v0.1.0
