@@ -46,7 +46,9 @@ func (x *x11WM) watchScreensaver() {
 		slept := now.Sub(previous).Seconds() > 2 // skipped a tick
 		previous = now
 		if slept {
-			tyde.Instance().TriggerScreenSaver(false) // no delay on lock prompt after sleep
+			fyne.Do(func() {
+				tyde.Instance().TriggerScreenSaver(false) // no delay on lock prompt after sleep
+			})
 		} else if info.MsSinceUserInput <= 1500 {
 			tyde.Instance().DelayScreenSaver()
 		}

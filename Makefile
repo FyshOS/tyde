@@ -8,7 +8,7 @@ PREFIX ?= /usr$(LOCAL)
 build:
 	go build ./cmd/tyde_runner
 	go build ./cmd/tyde_ctl
-	go build ./cmd/tyde
+	go build -tags migrated_fynedo ./cmd/tyde
 
 install:
 	install -Dm00755 tyde_runner $(DESTDIR)$(PREFIX)/bin/tyde_runner

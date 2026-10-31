@@ -1,7 +1,7 @@
 codeberg.org/sdassow/unyts v0.5.1 h1:7mgAqMsgrpsFNXKXFZOzXDlCb3hAW4q0mYyOIN31lLk=
 codeberg.org/sdassow/unyts v0.5.1/go.mod h1:G7IVCrmY/57ojDjMqkmIlRpyLvLF5FrQEbaJv5RzS2k=
-fyne.io/fyne/v2 v2.8.3-0.20261018211521-847e15d76d82 h1:Xpfl7G4eE3S1yr6bLsySyIPgXhs6P5vkwUWUSwNSAgk=
-fyne.io/fyne/v2 v2.8.3-0.20261018211521-847e15d76d82/go.mod h1:eXHJ/D9Y58UcDw7SkguadCRI64M4flXyjoMn827Q5SI=
+fyne.io/fyne/v2 v2.8.3-0.20261027183136-9fee2527d039 h1:28qPEnoH8QCfP9efHQQIxlR+WyKmAjNzgjAaUHycTs4=
+fyne.io/fyne/v2 v2.8.3-0.20261027183136-9fee2527d039/go.mod h1:eXHJ/D9Y58UcDw7SkguadCRI64M4flXyjoMn827Q5SI=
 fyne.io/systray v1.12.3-0.20260810170012-af4e8e793ec4 h1:149/+Wa5EsLLXfyj2pdTmvnQf2VIlgCIwSjcCTHYhIo=
 fyne.io/systray v1.12.3-0.20260810170012-af4e8e793ec4/go.mod h1:RVwqP9nYMo7h5zViCBHri2FgjXF7H2cub7MAq4NSoLs=
 github.com/ActiveState/termtest/conpty v0.5.0 h1:JLUe6YDs4Jw4xNPCU+8VwTpniYOGeKzQg4SM2YHQNA8=
@@ -15,8 +15,6 @@ github.com/BurntSushi/graphics-go v0.0.0-20160129215708-b43f31a4a966 h1:lTG4HQym
 github.com/BurntSushi/graphics-go v0.0.0-20160129215708-b43f31a4a966/go.mod h1:Mid70uvE93zn9wgF92A/r5ixgnvX8Lh68fxp9KQBaI0=
 github.com/BurntSushi/toml v1.6.0 h1:dRaEfpa2VI55EwlIW72hMRHdWouJeRF7TPYhI+AUQjk=
 github.com/BurntSushi/toml v1.6.0/go.mod h1:ukJfTF/6rtPPRCnwkur4qwRxa8vTRFBF0uk2lLoLwho=
-github.com/FyshOS/appie v0.1.1-0.20260821081836-ef3e2e6dcddb h1:+3wrrU0eeSgs1KoPQh0TSdsuFVgoojyWLgvi16BTPyo=
-github.com/FyshOS/appie v0.1.1-0.20260821081836-ef3e2e6dcddb/go.mod h1:Gtvb1fKDXbE9HjMtoYdB2MPSSGy6PdtMl0TC9dSF8q0=
 github.com/FyshOS/appie v0.1.1-0.20261024110852-0e2eb921fbec h1:VufpQwVOjnRGckhZokPEQXpHCXzQOsRiD2R2kioI3UQ=
 github.com/FyshOS/appie v0.1.1-0.20261024110852-0e2eb921fbec/go.mod h1:Gtvb1fKDXbE9HjMtoYdB2MPSSGy6PdtMl0TC9dSF8q0=
 github.com/FyshOS/backgrounds v0.1.1-0.20260808235716-a384bdf00565 h1:/XvRl5IwSOxG8A39KHoR+/jYImG6e/U880syCgesGtU=
@@ -31,8 +29,8 @@ github.com/FyshOS/fyqr v0.0.0-20260624214941-a4d5d5c1e9e1 h1:Yl7L3Q2g3XlEmlzsS4J
 github.com/FyshOS/fyqr v0.0.0-20260624214941-a4d5d5c1e9e1/go.mod h1:hFyul2zT1VOgINBEBeRVkXeoCBWo5dWU4poPihDniVU=
 github.com/FyshOS/networks v0.0.0-20261002162256-6ee1ef27dcda h1:nTB8R9Vmj2wq/XhR1X9GHHN73tj9FCi1Y085oh8ThAI=
 github.com/FyshOS/networks v0.0.0-20261002162256-6ee1ef27dcda/go.mod h1:a5o3EtKWjdaabhT3lu/XHggXUIyigkiiF/A71uK7Ik8=
-github.com/FyshOS/saver v0.1.2-0.20260814101723-cb6501988dd3 h1:J4HauykfI4PohikLY+AZ5+s7c9E2te7vXiEZ6CfBUVo=
-github.com/FyshOS/saver v0.1.2-0.20260814101723-cb6501988dd3/go.mod h1:KQYjQdsB9DJx04mXu2WLxKNFmzo/eQ2SywlF5shEp5E=
+github.com/FyshOS/saver v0.1.2-0.20261031172139-e6b4caeaa188 h1:aKwCcDQ6352fyxvZMU6kJzzJHxMj9wCCY8pGtR/E4W0=
+github.com/FyshOS/saver v0.1.2-0.20261031172139-e6b4caeaa188/go.mod h1:KQYjQdsB9DJx04mXu2WLxKNFmzo/eQ2SywlF5shEp5E=
 github.com/FyshOS/screens v0.0.0-20260731162110-c150f5b008bd h1:Ds29TB0UB4rR95EWvgtX451iwYJwZDNR+PNrtt7gov4=
 github.com/FyshOS/screens v0.0.0-20260731162110-c150f5b008bd/go.mod h1:WUjD+Oi5pGOusfSqrFrk/woIrqr+bMOZUGK0lc5mbRQ=
 github.com/Knetic/govaluate v3.0.0+incompatible h1:7o6+MAPhYTCF0+fdvoz1xDedhRb4f6s9Tn1Tt7/WTEg=
