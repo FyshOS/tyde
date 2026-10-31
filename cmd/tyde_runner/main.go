@@ -49,8 +49,8 @@ func main() {
 			} else if status == 512 { // X server unavailable
 				log.Println("X server went away")
 				return
-			} else if status == 2 {
-				log.Println("Failed to connect to X, retrying")
+			} else if status == 2 { // the Go runtime's exit code for an unrecovered panic
+				log.Println("Crashed with a panic, restarting")
 			} else {
 				log.Println("Restart from status", status)
 			}
