@@ -7,7 +7,10 @@ import (
 	"testing"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/test"
 	"github.com/stretchr/testify/assert"
+
+	wmTest "fyshos.com/tyde/test"
 )
 
 // A failed GL readback comes back as a solid-black opaque image, which must be
@@ -84,4 +87,31 @@ func TestOverviewPanelGeometryGrid(t *testing.T) {
 	// Centred: left margin equals right margin, top equals bottom.
 	assert.InDelta(t, pos[0].X, size.Width-(pos[1].X+sz[1].Width), 0.1)
 	assert.InDelta(t, pos[0].Y, size.Height-(pos[2].Y+sz[2].Height), 0.1)
+}
+
+// Zoomed right in, the focused desktop's panel is the whole view, so its label is
+// laid out exactly as the switch badge that takes over from it.
+func TestOverviewPanelGeometryZoomedIn(t *testing.T) {
+	size := fyne.NewSize(800, 600)
+	pos, sz := overviewPanelGeometryAt(4, 3, 3, 0, size)
+	assert.InDelta(t, 0, pos.X, 0.01)
+	assert.InDelta(t, 0, pos.Y, 0.01)
+	assert.InDelta(t, size.Width, sz.Width, 0.01)
+	assert.InDelta(t, size.Height, sz.Height, 0.01)
+
+	test.NewTempApp(t)
+	c := newOverviewContent(4, 0, wmTest.NewSettings(), size, nil, nil)
+	c.setCamera(3, 0, 1)
+	badge := newDeskBadge()
+	badge.Resize(size)
+	badge.show(c.panels[3].text.Text)
+	badge.CreateRenderer().Layout(size)
+	badge.cancel()
+
+	label := c.panels[3]
+	assert.InDelta(t, badge.text.TextSize, label.text.TextSize, 0.01)
+	assert.InDelta(t, badge.bg.Size().Width, label.bg.Size().Width, 0.1)
+	assert.InDelta(t, badge.bg.Position().X, label.Position().X+label.bg.Position().X, 0.1)
+	assert.InDelta(t, badge.bg.Position().Y, label.Position().Y+label.bg.Position().Y, 0.1)
+	assert.Equal(t, badge.bg.FillColor, label.bg.FillColor)
 }

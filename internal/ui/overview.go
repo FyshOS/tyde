@@ -26,9 +26,9 @@ type deskOverview struct {
 	count   int
 	focus   int // desktop the view was opened from (current desktop)
 	active  bool
-	shaders []*canvas.Shader  // per-screen shaders currently playing
-	anim    *fyne.Animation   // the in-flight zoom animation
-	content fyne.CanvasObject // interactive selection layer on the primary overlay
+	shaders []*canvas.Shader // per-screen shaders currently playing
+	anim    *fyne.Animation  // the in-flight zoom animation
+	content *overviewContent // interactive selection layer on the primary overlay
 }
 
 // ShowDesktopOverview reveals all virtual desktops laid out in a grid and lets the
@@ -49,7 +49,7 @@ func (l *desktop) ShowDesktopOverview(count int) {
 }
 
 // open captures every desktop into a per-screen strip, shows the shaders and plays
-// the zoom-out. When it settles the interactive selection layer is revealed.
+// the zoom-out, the desktop labels fading in as they shrink with their desktops.
 func (o *deskOverview) open() {
 	l := o.desk
 	var shaders []*canvas.Shader
@@ -83,14 +83,13 @@ func (o *deskOverview) open() {
 	}
 
 	o.shaders = shaders
-	o.animate(0, 1, o.focus, func() {
-		o.showContent()
-	})
+	o.showContent()
+	o.animate(0, 1, o.focus, nil)
 }
 
-// showContent reveals the interactive selection layer over the settled zoom-out.
-// It lives on the primary overlay, above the overview shader, and is focused so it
-// receives the Escape key.
+// showContent adds the interactive selection layer, which also carries the desktop
+// labels and so follows the zoom. It lives on the primary overlay, above the
+// overview shader, and is focused so it receives the Escape key.
 func (o *deskOverview) showContent() {
 	l := o.desk
 	if !o.active || l.primaryWin == nil || l.primaryWin.win == nil {
@@ -101,6 +100,7 @@ func (o *deskOverview) showContent() {
 	content := newOverviewContent(o.count, l.desk, l.Settings(), size,
 		func(d int) { o.selectDesk(d) },
 		func() { o.cancel() })
+	content.setCamera(o.focus, 0, 0)
 	o.content = content
 	l.showOverlay(content, size, fyne.NewPos(0, 0), content)
 }
@@ -111,7 +111,6 @@ func (o *deskOverview) selectDesk(d int) {
 		return
 	}
 
-	o.removeContent()
 	if d != o.desk.desk {
 		o.desk.setDesktop(d, false)
 	}
@@ -124,13 +123,14 @@ func (o *deskOverview) cancel() {
 		return
 	}
 
-	o.removeContent()
 	o.close(o.focus)
 }
 
 // close plays the zoom-in to the given desktop then tears the overview down.
 func (o *deskOverview) close(focus int) {
 	o.animate(1, 0, focus, func() {
+		o.removeContent()
+		o.desk.flashDeskBadge(focus)
 		for _, s := range o.shaders {
 			s.Hide()
 		}
@@ -166,6 +166,9 @@ func (o *deskOverview) animate(from, to float32, focus int, onDone func()) {
 		for _, s := range o.shaders {
 			s.Uniforms["progress"] = p
 			s.Refresh()
+		}
+		if o.content != nil {
+			o.content.setCamera(focus, p, maxF(p, from))
 		}
 
 		if f >= 1.0 {
@@ -315,10 +318,16 @@ func overviewGridCols(count int) int {
 }
 
 // overviewPanelGeometry returns the on-screen position and size of the preview for
-// desktop index when all count desktops are framed as a grid. It reproduces exactly
-// the camera the overview shader settles on at full zoom-out, so the interactive
-// panels line up with the rendered desktops.
+// desktop index when all count desktops are framed as a grid, the overview fully
+// zoomed out.
 func overviewPanelGeometry(count, index int, size fyne.Size) (fyne.Position, fyne.Size) {
+	return overviewPanelGeometryAt(count, index, 0, 1, size)
+}
+
+// overviewPanelGeometryAt returns the on-screen position and size of the preview for
+// desktop index part way through the zoom: progress 0 has desktop focus filling the
+// view, 1 frames the whole grid.
+func overviewPanelGeometryAt(count, index, focus int, progress float32, size fyne.Size) (fyne.Position, fyne.Size) {
 	cols := overviewGridCols(count)
 	rows := int(math.Ceil(float64(count) / float64(cols)))
 	aspect := size.Width / size.Height
@@ -328,8 +337,13 @@ func overviewPanelGeometry(count, index int, size fyne.Size) (fyne.Position, fyn
 	totalW := float32(cols)*aspect + float32(cols-1)*overviewGap
 	totalH := float32(rows) + float32(rows-1)*overviewGap
 
-	zoomH := maxF(totalH*0.5, totalW/(2*aspect)) * overviewMargin
-	cx, cy := totalW*0.5, totalH*0.5
+	p := minF(maxF(progress, 0), 1)
+	p = p * p * (3 - 2*p) // the shader's smoothstep
+	mix := func(a, b float32) float32 { return a + (b-a)*p }
+
+	zoomH := mix(0.5, maxF(totalH*0.5, totalW/(2*aspect))*overviewMargin)
+	cx := mix(float32(focus%cols)*pitchX+aspect*0.5, totalW*0.5)
+	cy := mix(float32(focus/cols)*pitchY+0.5, totalH*0.5)
 
 	col := index % cols
 	row := index / cols
@@ -354,22 +368,45 @@ func maxF(a, b float32) float32 {
 	return b
 }
 
+func minF(a, b float32) float32 {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 // overviewContent is the interactive selection layer: a transparent, full-screen,
 // focusable widget hosting one tappable panel per desktop. Tapping a panel selects
 // that desktop; tapping elsewhere or pressing Escape cancels.
 type overviewContent struct {
 	widget.BaseWidget
-	count, current int
-	settings       tyde.DeskSettings // for the desktop names
-	size           fyne.Size
-	onSelect       func(int)
-	onCancel       func()
+	count    int
+	size     fyne.Size
+	panels   []*overviewPanel
+	onSelect func(int)
+	onCancel func()
 }
 
 func newOverviewContent(count, current int, settings tyde.DeskSettings, size fyne.Size, sel func(int), cancel func()) *overviewContent {
-	c := &overviewContent{count: count, current: current, settings: settings, size: size, onSelect: sel, onCancel: cancel}
+	c := &overviewContent{count: count, size: size, onSelect: sel, onCancel: cancel}
+	for d := 0; d < count; d++ {
+		c.panels = append(c.panels, newOverviewPanel(d, tyde.DesktopName(settings, d), d == current, sel))
+	}
+	c.setCamera(current, 1, 1)
 	c.ExtendBaseWidget(c)
 	return c
+}
+
+// setCamera places every panel where the overview shader draws its desktop at the
+// given zoom progress and focus, with the labels at the given opacity (0..1).
+func (c *overviewContent) setCamera(focus int, progress, alpha float32) {
+	for d, p := range c.panels {
+		pos, sz := overviewPanelGeometryAt(c.count, d, focus, progress, c.size)
+		tintDeskLabel(p.bg, p.text, alpha)
+		p.Move(pos)
+		p.Resize(sz)
+		p.Refresh()
+	}
 }
 
 func (c *overviewContent) Tapped(*fyne.PointEvent) {
@@ -389,30 +426,41 @@ func (c *overviewContent) FocusGained()   {}
 func (c *overviewContent) FocusLost()     {}
 
 func (c *overviewContent) CreateRenderer() fyne.WidgetRenderer {
-	objs := make([]fyne.CanvasObject, 0, c.count)
-	for d := 0; d < c.count; d++ {
-		p := newOverviewPanel(d, tyde.DesktopName(c.settings, d), d == c.current, c.onSelect)
-		pos, sz := overviewPanelGeometry(c.count, d, c.size)
-		p.Move(pos)
-		p.Resize(sz)
-		objs = append(objs, p)
+	objs := make([]fyne.CanvasObject, len(c.panels))
+	for i, p := range c.panels {
+		objs[i] = p
 	}
 	return widget.NewSimpleRenderer(container.NewWithoutLayout(objs...))
 }
 
 // overviewPanel is one desktop's hit area in the overview. It is transparent so the
 // shader-rendered desktop shows through; the current desktop gets a highlight border
-// and every panel shows its number.
+// and every panel carries its name or number as a miniature of the switch badge,
+// scaled to the panel so it tracks the zoom.
 type overviewPanel struct {
 	widget.BaseWidget
 	index    int
-	label    string // the desktop's name or number
-	current  bool
 	onSelect func(int)
+
+	border, bg *canvas.Rectangle
+	text       *canvas.Text
 }
 
 func newOverviewPanel(index int, label string, current bool, sel func(int)) *overviewPanel {
-	p := &overviewPanel{index: index, label: label, current: current, onSelect: sel}
+	p := &overviewPanel{
+		index:    index,
+		onSelect: sel,
+		border:   canvas.NewRectangle(color.Transparent),
+		bg:       canvas.NewRectangle(color.Transparent),
+		text:     canvas.NewText(label, color.Transparent),
+	}
+	if current {
+		p.border.StrokeColor = theme.Color(theme.ColorNamePrimary)
+		p.border.StrokeWidth = 3
+	}
+	p.text.Alignment = fyne.TextAlignCenter
+	p.text.TextStyle = fyne.TextStyle{Bold: true}
+	tintDeskLabel(p.bg, p.text, 1)
 	p.ExtendBaseWidget(p)
 	return p
 }
@@ -424,17 +472,30 @@ func (p *overviewPanel) Tapped(*fyne.PointEvent) {
 }
 
 func (p *overviewPanel) CreateRenderer() fyne.WidgetRenderer {
-	border := canvas.NewRectangle(color.Transparent)
-	if p.current {
-		border.StrokeColor = theme.Color(theme.ColorNamePrimary)
-		border.StrokeWidth = 3
-	}
-
-	label := canvas.NewText(p.label, theme.Color(theme.ColorNameForeground))
-	label.Alignment = fyne.TextAlignCenter
-	label.TextSize = theme.TextHeadingSize()
-	label.TextStyle = fyne.TextStyle{Bold: true}
-
-	content := container.NewStack(border, container.NewCenter(label))
-	return widget.NewSimpleRenderer(content)
+	return &overviewPanelRenderer{panel: p}
 }
+
+type overviewPanelRenderer struct {
+	panel *overviewPanel
+}
+
+func (r *overviewPanelRenderer) Layout(size fyne.Size) {
+	p := r.panel
+	p.border.Resize(size)
+	fitDeskLabel(p.bg, p.text, size)
+	placeDeskLabel(p.bg, p.text, size)
+}
+
+func (r *overviewPanelRenderer) MinSize() fyne.Size {
+	return fyne.Size{}
+}
+
+func (r *overviewPanelRenderer) Refresh() {
+	canvas.Refresh(r.panel) // the label is laid out on resize, which is every zoom frame
+}
+
+func (r *overviewPanelRenderer) Objects() []fyne.CanvasObject {
+	return []fyne.CanvasObject{r.panel.border, r.panel.bg, r.panel.text}
+}
+
+func (r *overviewPanelRenderer) Destroy() {}

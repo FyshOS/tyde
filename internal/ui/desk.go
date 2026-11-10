@@ -143,8 +143,8 @@ func (l *desktop) setDesktop(id int, cube bool) {
 
 	if cube {
 		l.startDeskCube(old, id)
+		l.flashDeskBadge(id) // the overview grows its own label into the badge instead
 	}
-	l.flashDeskBadge(id)
 
 	l.desk = id
 	if wm, ok := l.wm.(notify.DesktopNotify); ok {

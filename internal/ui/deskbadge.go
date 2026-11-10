@@ -51,13 +51,7 @@ func (b *deskBadge) show(label string) {
 	b.cancel()
 
 	b.text.Text = label
-	b.text.TextSize = b.Size().Height * deskBadgeScale
-	// Text width is not quite proportional to its size, so converge in a few steps.
-	maxW := b.Size().Width * deskBadgeMaxWidth
-	for i := 0; i < 4 && maxW > 0 && b.text.MinSize().Width > maxW; i++ {
-		b.text.TextSize *= maxW / b.text.MinSize().Width
-	}
-	b.bg.CornerRadius = b.text.TextSize / 4
+	fitDeskLabel(b.bg, b.text, b.Size())
 	b.setOpacity(1)
 	b.Show()
 	b.Refresh()
@@ -98,8 +92,7 @@ func (b *deskBadge) cancel() {
 
 // setOpacity applies the theme colours at the given opacity (0..1).
 func (b *deskBadge) setOpacity(alpha float32) {
-	b.bg.FillColor = withAlpha(theme.Color(theme.ColorNameOverlayBackground), uint8(alpha*0.85*0xff))
-	b.text.Color = withAlpha(theme.Color(theme.ColorNameForeground), uint8(alpha*0xff))
+	tintDeskLabel(b.bg, b.text, alpha)
 	b.bg.Refresh()
 	b.text.Refresh()
 }
@@ -114,18 +107,7 @@ type deskBadgeRenderer struct {
 }
 
 func (r *deskBadgeRenderer) Layout(size fyne.Size) {
-	text := r.badge.text
-	pad := text.TextSize / 12
-	box := text.MinSize().Add(fyne.NewSize(pad*2, pad))
-	if box.Width < box.Height {
-		box.Width = box.Height // a single digit sits in a square
-	}
-	origin := fyne.NewPos((size.Width-box.Width)/2, (size.Height-box.Height)/2)
-
-	r.badge.bg.Resize(box)
-	r.badge.bg.Move(origin)
-	text.Resize(fyne.NewSize(box.Width, text.MinSize().Height))
-	text.Move(origin.Add(fyne.NewPos(0, (box.Height-text.MinSize().Height)/2)))
+	placeDeskLabel(r.badge.bg, r.badge.text, size)
 }
 
 func (r *deskBadgeRenderer) MinSize() fyne.Size {
@@ -143,4 +125,38 @@ func (r *deskBadgeRenderer) Objects() []fyne.CanvasObject {
 
 func (r *deskBadgeRenderer) Destroy() {
 	r.badge.cancel()
+}
+
+// fitDeskLabel sizes a desktop label for an area of the given size: the text height
+// is a fixed fraction of the area's height, and a long name is scaled down to fit
+// its width.
+func fitDeskLabel(bg *canvas.Rectangle, text *canvas.Text, size fyne.Size) {
+	text.TextSize = size.Height * deskBadgeScale
+	// Text width is not quite proportional to its size, so converge in a few steps.
+	maxW := size.Width * deskBadgeMaxWidth
+	for i := 0; i < 4 && maxW > 0 && text.MinSize().Width > maxW; i++ {
+		text.TextSize *= maxW / text.MinSize().Width
+	}
+	bg.CornerRadius = text.TextSize / 4
+}
+
+// placeDeskLabel centres a padded box holding the label within an area of the given size.
+func placeDeskLabel(bg *canvas.Rectangle, text *canvas.Text, size fyne.Size) {
+	pad := text.TextSize / 12
+	box := text.MinSize().Add(fyne.NewSize(pad*2, pad))
+	if box.Width < box.Height {
+		box.Width = box.Height // a single digit sits in a square
+	}
+	origin := fyne.NewPos((size.Width-box.Width)/2, (size.Height-box.Height)/2)
+
+	bg.Resize(box)
+	bg.Move(origin)
+	text.Resize(fyne.NewSize(box.Width, text.MinSize().Height))
+	text.Move(origin.Add(fyne.NewPos(0, (box.Height-text.MinSize().Height)/2)))
+}
+
+// tintDeskLabel applies the theme colours to a desktop label at the given opacity (0..1).
+func tintDeskLabel(bg *canvas.Rectangle, text *canvas.Text, alpha float32) {
+	bg.FillColor = withAlpha(theme.Color(theme.ColorNameOverlayBackground), uint8(alpha*0.85*0xff))
+	text.Color = withAlpha(theme.Color(theme.ColorNameForeground), uint8(alpha*0xff))
 }
