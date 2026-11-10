@@ -8,9 +8,49 @@ import (
 	"image/color"
 	"testing"
 
+	"fyshos.com/tyde"
 	"github.com/BurntSushi/xgb/xproto"
 	"github.com/stretchr/testify/assert"
 )
+
+func TestHidden(t *testing.T) {
+	left := &tyde.Screen{Name: "L", X: 0, Y: 0, Width: 1920, Height: 1080}
+	right := &tyde.Screen{Name: "R", X: 1920, Y: 0, Width: 1280, Height: 1024}
+	ws := &widgets{screens: []screenWidgets{{screen: left}, {screen: right}}}
+
+	viewable := xproto.GetWindowAttributesReply{MapState: xproto.MapStateViewable}
+	spanning := func(s *tyde.Screen) xproto.GetGeometryReply {
+		// the saver sizes its windows a pixel beyond each screen edge
+		return xproto.GetGeometryReply{
+			X: int16(s.X - 1), Y: int16(s.Y - 1),
+			Width: uint16(s.Width + 2), Height: uint16(s.Height + 2),
+		}
+	}
+	saver := func(s *tyde.Screen) *client {
+		return &client{skipped: true, attributes: viewable, geom: spanning(s)}
+	}
+	game := &client{
+		fullscreened: true, attributes: viewable,
+		geom: xproto.GetGeometryReply{X: 0, Y: 0, Width: 1920, Height: 1080},
+	}
+	app := &client{attributes: viewable, geom: xproto.GetGeometryReply{X: 100, Y: 100, Width: 800, Height: 600}}
+	wide := &client{attributes: viewable, geom: xproto.GetGeometryReply{X: 1000, Y: 100, Width: 1800, Height: 600}}
+
+	assert.False(t, hidden(app, nil, ws), "nothing above")
+	assert.False(t, hidden(app, []*client{wide}, ws), "an ordinary window above does not hide")
+	assert.True(t, hidden(app, []*client{saver(left)}, ws), "a saver over its screen hides")
+	assert.True(t, hidden(app, []*client{game}, ws), "an unredirected fullscreen window over its screen hides")
+	assert.False(t, hidden(wide, []*client{game}, ws), "a window reaching the other screen still shows there")
+	assert.True(t, hidden(wide, []*client{game, saver(right)}, ws), "unless that screen is covered too")
+
+	unmapped := saver(left)
+	unmapped.attributes.MapState = xproto.MapStateUnmapped
+	assert.False(t, hidden(app, []*client{unmapped}, ws), "an unmapped window hides nothing")
+
+	grab := saver(left)
+	grab.attributes.Class = xproto.WindowClassInputOnly
+	assert.False(t, hidden(app, []*client{grab}, ws), "an input-only window is invisible")
+}
 
 // convertNaive is a straightforward, independent reference implementation of
 // the BGRA->premultiplied-RGBA conversion, used as a correctness oracle and as

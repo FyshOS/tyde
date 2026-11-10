@@ -847,13 +847,15 @@ func refreshWindows(conn *xgb.Conn, ws *widgets) {
 	// window opened right after wake appears without waiting for the bulk
 	// re-capture of every previously-open window — which can take seconds when
 	// everything is damaged at once, as happens on resume from sleep.
+	// clients is top-first, so the windows before c in it are stacked over it.
+	stack := clients
 	hadPriority := false
-	for _, c := range clients {
+	for i, c := range stack {
 		if !c.priority {
 			continue
 		}
 		c.priority = false
-		if captureClient(conn, ws, c, refreshed) {
+		if captureClient(conn, ws, c, stack[:i], refreshed) {
 			hadPriority = true
 		}
 	}
@@ -863,17 +865,17 @@ func refreshWindows(conn *xgb.Conn, ws *widgets) {
 
 	// Pass 2: everything else, batched into a single refresh at the end. Windows
 	// captured in pass 1 are no longer damaged, so they are skipped here.
-	for _, c := range clients {
-		captureClient(conn, ws, c, refreshed)
+	for i, c := range stack {
+		captureClient(conn, ws, c, stack[:i], refreshed)
 	}
 	flushRefresh(refreshed)
 }
 
 // captureClient grabs what was drawn to window c's pixmap into its back buffer
 // and marks the affected compositor widgets for refresh (via flushRefresh). It
-// returns whether a capture happened.
-func captureClient(conn *xgb.Conn, ws *widgets, c *client, refreshed map[*ui.CompositorWidget]bool) bool {
-	if !clientCapturable(c) || !ensureNamedPixmap(conn, c) {
+// returns whether a capture happened. above holds the windows stacked over c.
+func captureClient(conn *xgb.Conn, ws *widgets, c *client, above []*client, refreshed map[*ui.CompositorWidget]bool) bool {
+	if !clientCapturable(c) || hidden(c, above, ws) || !ensureNamedPixmap(conn, c) {
 		return false
 	}
 
@@ -1249,6 +1251,41 @@ func computeTranslucency(conn *xgb.Conn, c *client) float64 {
 	return 0.0
 }
 
+// hidden reports whether window c lies beneath windows that X draws directly,
+// an unredirected fullscreen window or one the compositor skips such as a
+// screensaver, on every screen it reaches. Nothing captured from it could then
+// be seen, so the capture waits; its damage stays noted for when they go.
+func hidden(c *client, above []*client, ws *widgets) bool {
+	screens := ws.screensForClient(c)
+	if len(screens) == 0 {
+		return false
+	}
+	for _, sw := range screens {
+		if !coveredBy(sw.screen, above) {
+			return false
+		}
+	}
+	return true
+}
+
+// coveredBy reports whether one of wins is showing, drawn directly by X and
+// spans the whole of screen.
+func coveredBy(screen *tyde.Screen, wins []*client) bool {
+	for _, w := range wins {
+		if !(w.skipped || w.fullscreened) || w.attributes.MapState != xproto.MapStateViewable ||
+			w.attributes.Class == xproto.WindowClassInputOnly {
+			continue
+		}
+		x, y := int(w.geom.X), int(w.geom.Y)
+		if x <= screen.X && y <= screen.Y &&
+			x+int(w.geom.Width) >= screen.X+screen.Width &&
+			y+int(w.geom.Height) >= screen.Y+screen.Height {
+			return true
+		}
+	}
+	return false
+}
+
 // isScreensaver detects screensaver windows.
 func isScreensaver(title string, attr *xproto.GetWindowAttributesReply, geom *xproto.GetGeometryReply) bool {
 	if title == saver.WindowTitle {
@@ -1450,6 +1487,11 @@ func configureClient(conn *xgb.Conn, ws *widgets, e xproto.ConfigureNotifyEvent)
 
 	restackClientOnly(e.Window, e.AboveSibling)
 
+	if client.skipped || client.fullscreened {
+		// A window X draws directly hides what it covers from capture, so a
+		// change to its shape calls for a pass over what it may have uncovered.
+		allDamage = true
+	}
 	if client.skipped {
 		return nil
 	}
